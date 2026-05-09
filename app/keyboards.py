@@ -55,13 +55,23 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def webinar_admin_keyboard(webinar_id: str) -> InlineKeyboardMarkup:
+def webinar_admin_keyboard(webinar_id: str, status: str = "") -> InlineKeyboardMarkup:
+    status = (status or "").lower()
+    status_rows: list[list[InlineKeyboardButton]] = []
+    if status == "published":
+        status_rows.append(
+            [InlineKeyboardButton(text="Зняти з публікації", callback_data=f"admin:draft:{webinar_id}")]
+        )
+        status_rows.append([InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}")])
+    elif status == "archived":
+        status_rows.append([InlineKeyboardButton(text="Опублікувати знову", callback_data=f"admin:publish:{webinar_id}")])
+    else:
+        status_rows.append([InlineKeyboardButton(text="Опублікувати", callback_data=f"admin:publish:{webinar_id}")])
+        status_rows.append([InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}")])
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}"),
-                InlineKeyboardButton(text="Опублікувати", callback_data=f"admin:publish:{webinar_id}"),
-            ],
+            *status_rows,
             [InlineKeyboardButton(text="Посилання", callback_data=f"admin:links:{webinar_id}")],
             [InlineKeyboardButton(text="Розсилки", callback_data=f"admin:messages:{webinar_id}")],
             [InlineKeyboardButton(text="Назад", callback_data="admin:panel")],

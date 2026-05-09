@@ -43,6 +43,13 @@ LINK_FIELDS = {
 }
 
 
+STATUS_DESCRIPTIONS = {
+    "draft": "чернетка, користувачі її не бачать",
+    "published": "активний вебінар для /start і реєстрацій",
+    "archived": "архів, користувачі її не бачать",
+}
+
+
 def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezone_name: str) -> Router:
     router = Router()
 
@@ -107,13 +114,16 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             await callback.message.answer("Вебінарів поки немає.")
         for webinar in records:
             registrations = await pb.list_all_records("registrations", filter_=f'webinar="{webinar["id"]}"')
+            status = webinar.get("status", "")
+            status_description = STATUS_DESCRIPTIONS.get(status, "")
             await callback.message.answer(
                 f"<b>{webinar.get('title')}</b>\n"
                 f"ID: <code>{webinar.get('id')}</code>\n"
                 f"Дата: {webinar.get('scheduled_at')}\n"
-                f"Статус: <b>{webinar.get('status')}</b>\n"
+                f"Статус: <b>{status}</b>"
+                f"{f' — {status_description}' if status_description else ''}\n"
                 f"Реєстрацій: <b>{len(registrations)}</b>",
-                reply_markup=webinar_admin_keyboard(webinar["id"]),
+                reply_markup=webinar_admin_keyboard(webinar["id"], status),
             )
         await callback.answer()
 
@@ -126,13 +136,22 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await callback.message.answer("Вебінар архівовано.")
         await callback.answer()
 
+    @router.callback_query(F.data.startswith("admin:draft:"))
+    async def draft(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        webinar_id = callback.data.rsplit(":", 1)[1]
+        await pb.update_record("webinars", webinar_id, {"status": "draft"})
+        await callback.message.answer("Вебінар знято з публікації. Тепер користувачі не бачать його в /start.")
+        await callback.answer()
+
     @router.callback_query(F.data.startswith("admin:publish:"))
     async def publish(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
         webinar_id = callback.data.rsplit(":", 1)[1]
         await pb.update_record("webinars", webinar_id, {"status": "published"})
-        await callback.message.answer("Вебінар опубліковано.")
+        await callback.message.answer("Вебінар опубліковано. Тепер він активний для /start і реєстрацій.")
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:links:"))
@@ -311,7 +330,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
                 },
             )
         await state.clear()
-        await message.answer("Вебінар створено як чернетку.", reply_markup=webinar_admin_keyboard(webinar["id"]))
+        await message.answer("Вебінар створено як чернетку.", reply_markup=webinar_admin_keyboard(webinar["id"], "draft"))
 
     return router
 
