@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.content import CONFIRMATION_TEXT, WELCOME_TEXT, default_scheduled_messages
+from app.formatting import format_datetime_with_tz
 from app.keyboards import (
     admin_keyboard,
     message_list_keyboard,
@@ -138,7 +139,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             await callback.message.answer(
                 f"<b>{webinar.get('title')}</b>\n"
                 f"ID: <code>{webinar.get('id')}</code>\n"
-                f"Дата: {webinar.get('scheduled_at')}\n"
+                f"Дата: {format_datetime_with_tz(webinar.get('scheduled_at'), timezone_name)}\n"
                 f"Статус: <b>{status}</b>"
                 f"{f' — {status_description}' if status_description else ''}\n"
                 f"Реєстрацій: <b>{len(registrations)}</b>",
@@ -256,7 +257,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         for index, item in enumerate(page_items, start=page * PAGE_SIZE + 1):
             lines.append(
                 f"{index}. <b>{escape(item.get('title', 'Повідомлення'))}</b>\n"
-                f"   Час: {escape(item.get('send_at') or '-')}\n"
+                f"   Час: {format_datetime_with_tz(item.get('send_at'), timezone_name)}\n"
                 f"   Статус: {escape(item.get('status') or '-')}, медіа: {escape(item.get('media_type') or 'none')}"
             )
         await callback.message.answer(
@@ -277,7 +278,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await callback.message.answer(
             f"<b>{escape(item.get('title', 'Повідомлення'))}</b>\n"
             f"ID: <code>{item['id']}</code>\n"
-            f"Час: {escape(item.get('send_at') or '-')}\n"
+            f"Час: {format_datetime_with_tz(item.get('send_at'), timezone_name)}\n"
             f"Статус: <b>{escape(item.get('status') or '-')}</b>\n"
             f"Медіа: <b>{escape(item.get('media_type') or 'none')}</b>{' ✅' if item.get('media_file_id') else ''}\n\n"
             f"<b>Текст:</b>\n{escape(preview)}",
@@ -336,7 +337,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await state.update_data(message_id=message_id)
         await callback.message.answer(
             "Введіть нову дату і час відправки за Києвом.\n\n"
-            f"Поточний час: <code>{escape(item.get('send_at') or '-')}</code>\n\n"
+            f"Поточний час: <code>{format_datetime_with_tz(item.get('send_at'), timezone_name)}</code>\n\n"
             "Наприклад: 20.05.2026 17:00"
         )
         await callback.answer()
@@ -359,7 +360,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         )
         await state.clear()
         await message.answer(
-            f"Час оновлено: <code>{escape(item['send_at'])}</code>",
+            f"Час оновлено: <code>{format_datetime_with_tz(item['send_at'], timezone_name)}</code>",
             reply_markup=scheduled_message_keyboard(item["id"]),
         )
 
@@ -434,7 +435,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             lines.append(
                 f"{index}. <b>{escape(item.get('name') or '-')}</b>\n"
                 f"   Телефон: {escape(item.get('phone') or '-')}\n"
-                f"   Дата: {escape(item.get('registered_at') or '-')}"
+                f"   Дата: {format_datetime_with_tz(item.get('registered_at'), timezone_name)}"
             )
         await callback.message.answer(
             "\n".join(lines),
@@ -469,7 +470,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             f"Username: @{escape(user.get('username') or '-')}\n"
             f"Telegram name: {escape(' '.join(filter(None, [user.get('first_name'), user.get('last_name')])) or '-')}\n\n"
             f"<b>Вебінар:</b> {escape(webinar.get('title', '-'))}\n"
-            f"<b>Зареєстровано:</b> {escape(registration.get('registered_at') or '-')}\n\n"
+            f"<b>Зареєстровано:</b> {format_datetime_with_tz(registration.get('registered_at'), timezone_name)}\n\n"
             + "\n".join(answer_lines)
         )
         await callback.answer()
