@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+from math import ceil
 from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
@@ -10,7 +11,14 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.content import CONFIRMATION_TEXT, WELCOME_TEXT, default_scheduled_messages
-from app.keyboards import admin_keyboard, scheduled_message_keyboard, webinar_admin_keyboard, webinar_links_keyboard
+from app.keyboards import (
+    admin_keyboard,
+    message_list_keyboard,
+    registration_list_keyboard,
+    scheduled_message_keyboard,
+    webinar_admin_keyboard,
+    webinar_links_keyboard,
+)
 from app.pocketbase import USER_COLLECTION, PocketBaseClient
 from app.scheduler import send_scheduled_message
 
@@ -21,6 +29,7 @@ DATE_INPUT_HINT = (
     "20.05.2026 18:00\n\n"
     "Також підійде формат: 2026-05-20 18:00"
 )
+PAGE_SIZE = 5
 
 
 class WebinarCreateState(StatesGroup):
@@ -31,6 +40,12 @@ class WebinarCreateState(StatesGroup):
 
 class LinkEditState(StatesGroup):
     value = State()
+
+
+class MessageEditState(StatesGroup):
+    text = State()
+    time = State()
+    media = State()
 
 
 LINK_FIELDS = {
@@ -69,6 +84,10 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             return
         await state.clear()
         await callback.message.answer("Адмін-панель Laranko", reply_markup=admin_keyboard())
+        await callback.answer()
+
+    @router.callback_query(F.data == "admin:noop")
+    async def noop(callback: CallbackQuery) -> None:
         await callback.answer()
 
     @router.callback_query(F.data == "admin:stats")
@@ -218,22 +237,241 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
     async def messages(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
-        webinar_id = callback.data.rsplit(":", 1)[1]
-        records = await pb.list_records(
+        parts = callback.data.split(":")
+        webinar_id = parts[2]
+        page = int(parts[3]) if len(parts) > 3 else 0
+        records = await pb.list_all_records(
             "scheduled_messages",
             filter_=f'webinar="{webinar_id}"',
             sort="send_at",
-            per_page=30,
         )
         if not records:
             await callback.message.answer("Для цього вебінару немає запланованих повідомлень.")
-        for item in records:
-            await callback.message.answer(
-                f"<b>{item.get('title')}</b>\n"
-                f"Статус: <b>{item.get('status')}</b>\n"
-                f"Час: {item.get('send_at')}",
-                reply_markup=scheduled_message_keyboard(item["id"]),
+            await callback.answer()
+            return
+        total_pages = max(ceil(len(records) / PAGE_SIZE), 1)
+        page = min(max(page, 0), total_pages - 1)
+        page_items = records[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+        lines = [f"<b>Розсилки вебінару</b>\nСторінка {page + 1}/{total_pages}\n"]
+        for index, item in enumerate(page_items, start=page * PAGE_SIZE + 1):
+            lines.append(
+                f"{index}. <b>{escape(item.get('title', 'Повідомлення'))}</b>\n"
+                f"   Час: {escape(item.get('send_at') or '-')}\n"
+                f"   Статус: {escape(item.get('status') or '-')}, медіа: {escape(item.get('media_type') or 'none')}"
             )
+        await callback.message.answer(
+            "\n".join(lines),
+            reply_markup=message_list_keyboard(webinar_id, page_items, page, total_pages),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:message:"))
+    async def message_detail(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.get_record("scheduled_messages", message_id)
+        preview = (item.get("text") or "").strip()
+        if len(preview) > 900:
+            preview = preview[:900] + "..."
+        await callback.message.answer(
+            f"<b>{escape(item.get('title', 'Повідомлення'))}</b>\n"
+            f"ID: <code>{item['id']}</code>\n"
+            f"Час: {escape(item.get('send_at') or '-')}\n"
+            f"Статус: <b>{escape(item.get('status') or '-')}</b>\n"
+            f"Медіа: <b>{escape(item.get('media_type') or 'none')}</b>{' ✅' if item.get('media_file_id') else ''}\n\n"
+            f"<b>Текст:</b>\n{escape(preview)}",
+            reply_markup=scheduled_message_keyboard(item["id"]),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:message_back:"))
+    async def message_back(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.get_record("scheduled_messages", message_id)
+        records = await pb.list_all_records(
+            "scheduled_messages",
+            filter_=f'webinar="{item["webinar"]}"',
+            sort="send_at",
+        )
+        page_items = records[:PAGE_SIZE]
+        total_pages = max(ceil(len(records) / PAGE_SIZE), 1)
+        await callback.message.answer(
+            "<b>Розсилки вебінару</b>\nСторінка 1/" + str(total_pages),
+            reply_markup=message_list_keyboard(item["webinar"], page_items, 0, total_pages),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:edit_msg_text:"))
+    async def edit_message_text_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        await state.set_state(MessageEditState.text)
+        await state.update_data(message_id=callback.data.rsplit(":", 1)[1])
+        await callback.message.answer("Надішліть новий текст нагадування одним повідомленням.")
+        await callback.answer()
+
+    @router.message(MessageEditState.text)
+    async def edit_message_text_finish(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        text = (message.text or message.caption or "").strip()
+        if len(text) < 3:
+            await message.answer("Текст занадто короткий. Надішліть повний текст нагадування.")
+            return
+        data = await state.get_data()
+        item = await pb.update_record("scheduled_messages", data["message_id"], {"text": text, "status": "pending"})
+        await state.clear()
+        await message.answer("Текст оновлено.", reply_markup=scheduled_message_keyboard(item["id"]))
+
+    @router.callback_query(F.data.startswith("admin:edit_msg_time:"))
+    async def edit_message_time_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.get_record("scheduled_messages", message_id)
+        await state.set_state(MessageEditState.time)
+        await state.update_data(message_id=message_id)
+        await callback.message.answer(
+            "Введіть нову дату і час відправки за Києвом.\n\n"
+            f"Поточний час: <code>{escape(item.get('send_at') or '-')}</code>\n\n"
+            "Наприклад: 20.05.2026 17:00"
+        )
+        await callback.answer()
+
+    @router.message(MessageEditState.time)
+    async def edit_message_time_finish(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        try:
+            naive = parse_admin_datetime(message.text or "")
+        except ValueError:
+            await message.answer("Не вдалося прочитати дату. Приклад: 20.05.2026 17:00")
+            return
+        data = await state.get_data()
+        send_at = naive.replace(tzinfo=ZoneInfo(timezone_name)).isoformat()
+        item = await pb.update_record(
+            "scheduled_messages",
+            data["message_id"],
+            {"send_at": send_at, "status": "pending", "sent_at": ""},
+        )
+        await state.clear()
+        await message.answer(
+            f"Час оновлено: <code>{escape(item['send_at'])}</code>",
+            reply_markup=scheduled_message_keyboard(item["id"]),
+        )
+
+    @router.callback_query(F.data.startswith("admin:edit_msg_media:"))
+    async def edit_message_media_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        await state.set_state(MessageEditState.media)
+        await state.update_data(message_id=callback.data.rsplit(":", 1)[1])
+        await callback.message.answer("Надішліть фото або відео для цього нагадування.")
+        await callback.answer()
+
+    @router.message(MessageEditState.media)
+    async def edit_message_media_finish(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        media_type = ""
+        file_id = ""
+        if message.photo:
+            media_type = "photo"
+            file_id = message.photo[-1].file_id
+        elif message.video:
+            media_type = "video"
+            file_id = message.video.file_id
+        else:
+            await message.answer("Потрібно надіслати саме фото або відео.")
+            return
+        data = await state.get_data()
+        item = await pb.update_record(
+            "scheduled_messages",
+            data["message_id"],
+            {"media_type": media_type, "media_file_id": file_id, "status": "pending"},
+        )
+        await state.clear()
+        await message.answer(f"Медіа додано: <b>{media_type}</b>.", reply_markup=scheduled_message_keyboard(item["id"]))
+
+    @router.callback_query(F.data.startswith("admin:clear_msg_media:"))
+    async def clear_message_media(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.update_record(
+            "scheduled_messages",
+            message_id,
+            {"media_type": "none", "media_file_id": "", "status": "pending"},
+        )
+        await callback.message.answer("Медіа очищено.", reply_markup=scheduled_message_keyboard(item["id"]))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:registrations:"))
+    async def registrations(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        parts = callback.data.split(":")
+        webinar_id = parts[2]
+        page = int(parts[3]) if len(parts) > 3 else 0
+        webinar = await pb.get_record("webinars", webinar_id)
+        records = await pb.list_all_records(
+            "registrations",
+            filter_=f'webinar="{webinar_id}"',
+            sort="-registered_at",
+        )
+        if not records:
+            await callback.message.answer("На цей вебінар ще немає реєстрацій.")
+            await callback.answer()
+            return
+        total_pages = max(ceil(len(records) / PAGE_SIZE), 1)
+        page = min(max(page, 0), total_pages - 1)
+        page_items = records[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+        lines = [f"<b>Реєстрації</b>\n{escape(webinar.get('title', ''))}\nСторінка {page + 1}/{total_pages}\n"]
+        for index, item in enumerate(page_items, start=page * PAGE_SIZE + 1):
+            lines.append(
+                f"{index}. <b>{escape(item.get('name') or '-')}</b>\n"
+                f"   Телефон: {escape(item.get('phone') or '-')}\n"
+                f"   Дата: {escape(item.get('registered_at') or '-')}"
+            )
+        await callback.message.answer(
+            "\n".join(lines),
+            reply_markup=registration_list_keyboard(webinar_id, page_items, page, total_pages),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:registration:"))
+    async def registration_detail(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        registration_id = callback.data.rsplit(":", 1)[1]
+        registration = await pb.get_record("registrations", registration_id)
+        webinar = await pb.get_record("webinars", registration["webinar"])
+        user = await pb.get_record(USER_COLLECTION, registration["user"])
+        answers = registration.get("answers") or {}
+        labels = {
+            "name": "Імʼя",
+            "phone": "Телефон",
+            "design_stage": "Етап у дизайні",
+            "realization_experience": "Досвід реалізації",
+            "biggest_fear": "Що лякає/виснажує",
+            "speaker_question": "Питання до Оли",
+        }
+        answer_lines = [
+            f"<b>{label}:</b> {escape(str(answers.get(key) or registration.get(key) or '-'))}"
+            for key, label in labels.items()
+        ]
+        await callback.message.answer(
+            f"<b>Користувач</b>\n"
+            f"Telegram ID: <code>{escape(str(user.get('telegram_id', '-')))}</code>\n"
+            f"Username: @{escape(user.get('username') or '-')}\n"
+            f"Telegram name: {escape(' '.join(filter(None, [user.get('first_name'), user.get('last_name')])) or '-')}\n\n"
+            f"<b>Вебінар:</b> {escape(webinar.get('title', '-'))}\n"
+            f"<b>Зареєстровано:</b> {escape(registration.get('registered_at') or '-')}\n\n"
+            + "\n".join(answer_lines)
+        )
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:send_now:"))

@@ -6,11 +6,11 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from app.content import REGISTRATION_QUESTIONS
 from app.formatting import admin_registration_text
-from app.keyboards import choice_keyboard, links_keyboard, start_keyboard
+from app.keyboards import choice_keyboard, links_keyboard, name_keyboard, phone_keyboard, start_keyboard
 from app.pocketbase import USER_COLLECTION, PocketBaseClient
 
 
@@ -65,6 +65,36 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
         await save_answer_and_continue(callback.message, state, choices[index])
         await callback.answer()
 
+    @router.callback_query(RegistrationState.answering, F.data == "register:use_tg_name")
+    async def use_tg_name(callback: CallbackQuery, state: FSMContext) -> None:
+        data = await state.get_data()
+        step = int(data["step"])
+        question = REGISTRATION_QUESTIONS[step]
+        if question["key"] != "name":
+            await callback.answer("Ця кнопка зараз недоступна", show_alert=True)
+            return
+        profile_name = " ".join(
+            part for part in [callback.from_user.first_name, callback.from_user.last_name] if part
+        ).strip()
+        if not profile_name:
+            await callback.answer("У Telegram не вказано імʼя. Напишіть його вручну.", show_alert=True)
+            return
+        await save_answer_and_continue(callback.message, state, profile_name)
+        await callback.answer()
+
+    @router.message(RegistrationState.answering, F.contact)
+    async def contact_answer(message: Message, state: FSMContext) -> None:
+        data = await state.get_data()
+        step = int(data["step"])
+        question = REGISTRATION_QUESTIONS[step]
+        if question["key"] != "phone":
+            await message.answer("Дякую, але зараз потрібно відповісти на інше питання.")
+            return
+        if message.contact.user_id and message.contact.user_id != message.from_user.id:
+            await message.answer("Будь ласка, поділіться саме своїм номером або введіть його вручну.")
+            return
+        await save_answer_and_continue(message, state, message.contact.phone_number)
+
     @router.message(RegistrationState.answering)
     async def text_answer(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
@@ -98,6 +128,10 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
         keyboard = None
         if question["kind"] == "choice":
             keyboard = choice_keyboard("answer", question["choices"])
+        elif question["key"] == "name":
+            keyboard = name_keyboard()
+        elif question["key"] == "phone":
+            keyboard = phone_keyboard()
         await message.answer(question["text"], reply_markup=keyboard)
 
     async def save_answer_and_continue(message: Message, state: FSMContext, answer: str) -> None:
@@ -108,6 +142,8 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
         step += 1
         if step < len(REGISTRATION_QUESTIONS):
             await state.update_data(step=step, answers=answers)
+            if REGISTRATION_QUESTIONS[step - 1]["key"] == "phone":
+                await message.answer("Дякую, номер збережено.", reply_markup=ReplyKeyboardRemove())
             await ask_question(message, step)
             return
 

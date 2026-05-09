@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 
 def start_keyboard() -> InlineKeyboardMarkup:
@@ -17,6 +17,23 @@ def choice_keyboard(prefix: str, choices: list[str]) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=choice, callback_data=f"{prefix}:{index}")]
             for index, choice in enumerate(choices)
         ]
+    )
+
+
+def name_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Взяти імʼя з Telegram", callback_data="register:use_tg_name")]
+        ]
+    )
+
+
+def phone_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Поділитися номером", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Або введіть номер вручну",
     )
 
 
@@ -74,6 +91,7 @@ def webinar_admin_keyboard(webinar_id: str, status: str = "") -> InlineKeyboardM
             *status_rows,
             [InlineKeyboardButton(text="Посилання", callback_data=f"admin:links:{webinar_id}")],
             [InlineKeyboardButton(text="Розсилки", callback_data=f"admin:messages:{webinar_id}")],
+            [InlineKeyboardButton(text="Реєстрації", callback_data=f"admin:registrations:{webinar_id}")],
             [InlineKeyboardButton(text="Назад", callback_data="admin:panel")],
         ]
     )
@@ -96,10 +114,65 @@ def webinar_links_keyboard(webinar_id: str) -> InlineKeyboardMarkup:
 def scheduled_message_keyboard(message_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Редагувати текст", callback_data=f"admin:edit_msg_text:{message_id}"),
+                InlineKeyboardButton(text="Змінити час", callback_data=f"admin:edit_msg_time:{message_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="Додати медіа", callback_data=f"admin:edit_msg_media:{message_id}"),
+                InlineKeyboardButton(text="Очистити медіа", callback_data=f"admin:clear_msg_media:{message_id}"),
+            ],
             [InlineKeyboardButton(text="Відправити зараз", callback_data=f"admin:send_now:{message_id}")],
-            [InlineKeyboardButton(text="Назад", callback_data="admin:webinars")],
+            [InlineKeyboardButton(text="Назад до розсилок", callback_data=f"admin:message_back:{message_id}")],
         ]
     )
+
+
+def page_keyboard(
+    *,
+    prefix: str,
+    page: int,
+    total_pages: int,
+    back_callback: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="← Назад", callback_data=f"{prefix}:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{max(total_pages, 1)}", callback_data="admin:noop"))
+    if page + 1 < total_pages:
+        nav.append(InlineKeyboardButton(text="Далі →", callback_data=f"{prefix}:{page + 1}"))
+    rows.append(nav)
+    if back_callback:
+        rows.append([InlineKeyboardButton(text="Назад", callback_data=back_callback)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def message_list_keyboard(webinar_id: str, messages: list[dict], page: int, total_pages: int) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=item.get("title", "Повідомлення"), callback_data=f"admin:message:{item['id']}")]
+        for item in messages
+    ]
+    nav = page_keyboard(prefix=f"admin:messages:{webinar_id}", page=page, total_pages=total_pages).inline_keyboard
+    rows.extend(nav)
+    rows.append([InlineKeyboardButton(text="Назад до вебінарів", callback_data="admin:webinars")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def registration_list_keyboard(
+    webinar_id: str,
+    registrations: list[dict],
+    page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    rows = []
+    for item in registrations:
+        label = item.get("name") or item.get("phone") or item.get("id")
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"admin:registration:{item['id']}")])
+    nav = page_keyboard(prefix=f"admin:registrations:{webinar_id}", page=page, total_pages=total_pages).inline_keyboard
+    rows.extend(nav)
+    rows.append([InlineKeyboardButton(text="Назад до вебінарів", callback_data="admin:webinars")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def url_buttons(buttons: list[dict], webinar: dict) -> InlineKeyboardMarkup | None:
