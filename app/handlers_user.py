@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -11,6 +14,9 @@ from app.keyboards import choice_keyboard, links_keyboard, start_keyboard
 from app.pocketbase import PocketBaseClient
 
 
+logger = logging.getLogger(__name__)
+
+
 class RegistrationState(StatesGroup):
     answering = State()
 
@@ -18,8 +24,9 @@ class RegistrationState(StatesGroup):
 def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Router:
     router = Router()
 
-    @router.message(F.text == "/start")
+    @router.message(CommandStart())
     async def start(message: Message, state: FSMContext) -> None:
+        logger.info("Handling /start for user_id=%s username=%s", message.from_user.id, message.from_user.username)
         await state.clear()
         await pb.upsert_user(message.from_user)
         webinar = await pb.active_webinar()
