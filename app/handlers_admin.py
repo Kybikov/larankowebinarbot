@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from html import escape
 from math import ceil
@@ -259,6 +260,32 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             "\n".join(lines),
             reply_markup=message_list_keyboard(webinar_id, page_items, page, total_pages),
         )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:preview_all:"))
+    async def preview_all_messages(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        webinar_id = callback.data.rsplit(":", 1)[1]
+        records = await pb.list_all_records(
+            "scheduled_messages",
+            filter_=f'webinar="{webinar_id}"',
+            sort="send_at",
+        )
+        if not records:
+            await callback.message.answer("Для цього вебінару немає запланованих повідомлень.")
+            await callback.answer()
+            return
+        await callback.message.answer(f"Відправляю всі превʼю по черзі: <b>{len(records)}</b>.")
+        for index, scheduled in enumerate(records, start=1):
+            await callback.message.answer(
+                f"<b>Превʼю {index}/{len(records)}</b>\n"
+                f"{escape(scheduled.get('title', 'Повідомлення'))}\n"
+                f"Час: {format_datetime_with_tz(scheduled.get('send_at'), timezone_name)}"
+            )
+            await send_message_preview(callback.bot, pb, scheduled, callback.from_user.id)
+            await asyncio.sleep(0.3)
+        await callback.message.answer("Готово, всі превʼю відправлено.")
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:message:"))

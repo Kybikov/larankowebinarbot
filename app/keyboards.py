@@ -87,6 +87,7 @@ def webinar_admin_keyboard(webinar_id: str, status: str = "") -> InlineKeyboardM
             *status_rows,
             [InlineKeyboardButton(text="Посилання", callback_data=f"admin:links:{webinar_id}")],
             [InlineKeyboardButton(text="Розсилки", callback_data=f"admin:messages:{webinar_id}")],
+            [InlineKeyboardButton(text="Подивитись всі превʼю", callback_data=f"admin:preview_all:{webinar_id}")],
             [InlineKeyboardButton(text="Реєстрації", callback_data=f"admin:registrations:{webinar_id}")],
             [InlineKeyboardButton(text="Назад", callback_data="admin:panel")],
         ]
