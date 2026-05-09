@@ -96,6 +96,16 @@ class PocketBaseClient:
         for collection in collection_definitions():
             if collection["name"] not in existing:
                 await self._request("POST", "/api/collections", json=collection)
+                continue
+            existing_collection = existing[collection["name"]]
+            existing_fields = {field["name"] for field in existing_collection.get("schema", [])}
+            missing_fields = [field for field in collection["schema"] if field["name"] not in existing_fields]
+            if missing_fields:
+                await self._request(
+                    "PATCH",
+                    f"/api/collections/{existing_collection['id']}",
+                    json={"schema": [*existing_collection.get("schema", []), *missing_fields]},
+                )
 
     async def ensure_default_webinar(self) -> None:
         items = await self.list_records(
@@ -144,6 +154,7 @@ class PocketBaseClient:
                     "buttons": [button.__dict__ for button in template.buttons],
                     "media_type": template.media_type,
                     "media_file_id": "",
+                    "media_file_ids": [],
                     "status": "pending",
                     "sent_at": "",
                 },
@@ -398,6 +409,7 @@ def collection_definitions() -> list[dict[str, Any]]:
                 {"name": "buttons", "type": "json", "required": False, "options": {}},
                 {"name": "media_type", "type": "select", "required": True, "options": {"maxSelect": 1, "values": ["none", "photo", "video"]}},
                 {"name": "media_file_id", "type": "text", "required": False, "options": {}},
+                {"name": "media_file_ids", "type": "json", "required": False, "options": {}},
                 {"name": "status", "type": "select", "required": True, "options": {"maxSelect": 1, "values": ["pending", "sending", "sent", "failed"]}},
                 {"name": "sent_at", "type": "date", "required": False, "options": {}},
             ],

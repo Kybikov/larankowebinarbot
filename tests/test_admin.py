@@ -21,4 +21,5 @@ def test_parse_admin_datetime_keeps_iso_like_format() -> None:
 
 def test_media_label_requires_file_id() -> None:
     assert media_label({"media_type": "video", "media_file_id": ""}) == "не прикріплено"
-    assert media_label({"media_type": "photo", "media_file_id": "abc"}) == "фото прикріплено"
+    assert media_label({"media_type": "photo", "media_file_id": "abc"}) == "1 фото прикріплено"
+    assert media_label({"media_type": "photo", "media_file_ids": ["a", "b"]}) == "2 фото прикріплено"

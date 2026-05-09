@@ -14,6 +14,9 @@ from app.content import CONFIRMATION_TEXT, WELCOME_TEXT, default_scheduled_messa
 from app.formatting import format_datetime_with_tz
 from app.keyboards import (
     admin_keyboard,
+    media_collect_keyboard,
+    message_button_url_key_keyboard,
+    message_buttons_keyboard,
     message_list_keyboard,
     registration_list_keyboard,
     scheduled_message_keyboard,
@@ -21,7 +24,7 @@ from app.keyboards import (
     webinar_links_keyboard,
 )
 from app.pocketbase import USER_COLLECTION, PocketBaseClient
-from app.scheduler import send_message_preview, send_scheduled_message
+from app.scheduler import get_media_file_ids, send_message_preview, send_scheduled_message
 
 
 DATE_INPUT_HINT = (
@@ -47,6 +50,7 @@ class MessageEditState(StatesGroup):
     text = State()
     time = State()
     media = State()
+    button_text = State()
 
 
 LINK_FIELDS = {
@@ -272,6 +276,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             f"Час: {format_datetime_with_tz(item.get('send_at'), timezone_name)}\n"
             f"Статус: <b>{escape(item.get('status') or '-')}</b>\n"
             f"Медіа: <b>{escape(media_label(item))}</b>\n\n"
+            f"Кнопок: <b>{len(item.get('buttons') or [])}</b>\n\n"
             f"<b>Текст:</b>\n{escape(preview)}",
             reply_markup=scheduled_message_keyboard(item["id"]),
         )
@@ -360,33 +365,83 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         if not is_admin(callback.from_user.id):
             return
         await state.set_state(MessageEditState.media)
-        await state.update_data(message_id=callback.data.rsplit(":", 1)[1])
-        await callback.message.answer("Надішліть фото або відео для цього нагадування.")
+        message_id = callback.data.rsplit(":", 1)[1]
+        await state.update_data(message_id=message_id, media_file_ids=[])
+        await callback.message.answer(
+            "Надішліть одне або кілька фото. Можна відправити альбомом або по одному, потім натисніть «Готово».\n\n"
+            "Відео теж можна надіслати, але тільки одне.",
+            reply_markup=media_collect_keyboard(message_id),
+        )
         await callback.answer()
 
     @router.message(MessageEditState.media)
     async def edit_message_media_finish(message: Message, state: FSMContext) -> None:
         if not is_admin(message.from_user.id):
             return
-        media_type = ""
-        file_id = ""
+        data = await state.get_data()
+        message_id = data["message_id"]
         if message.photo:
-            media_type = "photo"
-            file_id = message.photo[-1].file_id
+            media_file_ids = list(data.get("media_file_ids") or [])
+            media_file_ids.append(message.photo[-1].file_id)
+            await state.update_data(media_file_ids=media_file_ids)
+            await message.answer(
+                f"Фото додано: <b>{len(media_file_ids)}</b>. Надішліть ще або натисніть «Готово».",
+                reply_markup=media_collect_keyboard(message_id),
+            )
+            return
         elif message.video:
-            media_type = "video"
-            file_id = message.video.file_id
+            item = await pb.update_record(
+                "scheduled_messages",
+                message_id,
+                {
+                    "media_type": "video",
+                    "media_file_id": message.video.file_id,
+                    "media_file_ids": [message.video.file_id],
+                    "status": "pending",
+                },
+            )
+            await state.clear()
+            await message.answer("Відео додано.", reply_markup=scheduled_message_keyboard(item["id"]))
         else:
             await message.answer("Потрібно надіслати саме фото або відео.")
             return
+
+    @router.callback_query(MessageEditState.media, F.data.startswith("admin:finish_msg_media:"))
+    async def finish_message_media(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
         data = await state.get_data()
+        message_id = data.get("message_id") or callback.data.rsplit(":", 1)[1]
+        media_file_ids = list(data.get("media_file_ids") or [])
+        if not media_file_ids:
+            await callback.answer("Спочатку надішліть хоча б одне фото", show_alert=True)
+            return
         item = await pb.update_record(
             "scheduled_messages",
-            data["message_id"],
-            {"media_type": media_type, "media_file_id": file_id, "status": "pending"},
+            message_id,
+            {
+                "media_type": "photo",
+                "media_file_id": media_file_ids[0],
+                "media_file_ids": media_file_ids,
+                "status": "pending",
+            },
         )
         await state.clear()
-        await message.answer(f"Медіа додано: <b>{media_type}</b>.", reply_markup=scheduled_message_keyboard(item["id"]))
+        await callback.message.answer(
+            f"Фото додано: <b>{len(media_file_ids)}</b>.",
+            reply_markup=scheduled_message_keyboard(item["id"]),
+        )
+        await callback.answer()
+
+    @router.callback_query(MessageEditState.media, F.data.startswith("admin:cancel_msg_media:"))
+    async def cancel_message_media(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        await state.clear()
+        item = await pb.get_record("scheduled_messages", message_id)
+        await callback.message.answer("Додавання медіа скасовано.", reply_markup=scheduled_message_keyboard(item["id"]))
+        await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:clear_msg_media:"))
     async def clear_message_media(callback: CallbackQuery) -> None:
@@ -396,9 +451,96 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         item = await pb.update_record(
             "scheduled_messages",
             message_id,
-            {"media_type": "none", "media_file_id": "", "status": "pending"},
+            {"media_type": "none", "media_file_id": "", "media_file_ids": [], "status": "pending"},
         )
         await callback.message.answer("Медіа очищено.", reply_markup=scheduled_message_keyboard(item["id"]))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:msg_buttons:"))
+    async def message_buttons(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.get_record("scheduled_messages", message_id)
+        buttons = item.get("buttons") or []
+        if buttons:
+            lines = ["<b>Кнопки нагадування</b>"]
+            for index, button in enumerate(buttons, start=1):
+                lines.append(f"{index}. {escape(button.get('text', 'Кнопка'))} → <code>{escape(button.get('url_key', '-'))}</code>")
+            text = "\n".join(lines)
+        else:
+            text = "<b>Кнопки нагадування</b>\nКнопок поки немає."
+        await callback.message.answer(text, reply_markup=message_buttons_keyboard(message_id, buttons))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:add_msg_button:"))
+    async def add_message_button_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        await state.set_state(MessageEditState.button_text)
+        await state.update_data(message_id=message_id)
+        await callback.message.answer("Надішліть текст нової кнопки.")
+        await callback.answer()
+
+    @router.message(MessageEditState.button_text)
+    async def add_message_button_text(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        text = (message.text or "").strip()
+        if len(text) < 2:
+            await message.answer("Текст кнопки занадто короткий. Надішліть текст ще раз.")
+            return
+        data = await state.get_data()
+        await state.clear()
+        await state.update_data(message_id=data["message_id"], button_text=text)
+        await message.answer(
+            "Оберіть, яке посилання відкриватиме кнопка.",
+            reply_markup=message_button_url_key_keyboard(data["message_id"]),
+        )
+
+    @router.callback_query(F.data.startswith("admin:add_msg_button_key:"))
+    async def add_message_button_finish(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        _, _, message_id, url_key = callback.data.split(":", 3)
+        data = await state.get_data()
+        button_text = (data.get("button_text") or "").strip()
+        if not button_text:
+            await callback.answer("Текст кнопки не знайдено, почніть додавання ще раз", show_alert=True)
+            return
+        item = await pb.get_record("scheduled_messages", message_id)
+        buttons = list(item.get("buttons") or [])
+        buttons.append({"text": button_text, "url_key": url_key})
+        item = await pb.update_record("scheduled_messages", message_id, {"buttons": buttons, "status": "pending"})
+        await state.clear()
+        await callback.message.answer("Кнопку додано.", reply_markup=message_buttons_keyboard(message_id, item.get("buttons") or []))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:del_msg_button:"))
+    async def delete_message_button(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        _, _, message_id, index_text = callback.data.split(":", 3)
+        item = await pb.get_record("scheduled_messages", message_id)
+        buttons = list(item.get("buttons") or [])
+        try:
+            index = int(index_text)
+            buttons.pop(index)
+        except (ValueError, IndexError):
+            await callback.answer("Кнопку не знайдено", show_alert=True)
+            return
+        item = await pb.update_record("scheduled_messages", message_id, {"buttons": buttons, "status": "pending"})
+        await callback.message.answer("Кнопку видалено.", reply_markup=message_buttons_keyboard(message_id, item.get("buttons") or []))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:clear_msg_buttons:"))
+    async def clear_message_buttons(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.update_record("scheduled_messages", message_id, {"buttons": [], "status": "pending"})
+        await callback.message.answer("Кнопки очищено.", reply_markup=message_buttons_keyboard(message_id, item.get("buttons") or []))
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:preview_msg:"))
@@ -565,6 +707,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
                     "buttons": [button.__dict__ for button in template.buttons],
                     "media_type": template.media_type,
                     "media_file_id": "",
+                    "media_file_ids": [],
                     "status": "pending",
                     "sent_at": "",
                 },
@@ -593,10 +736,13 @@ def parse_admin_datetime(value: str) -> datetime:
 
 def media_label(item: dict) -> str:
     media_type = item.get("media_type") or "none"
-    if not item.get("media_file_id") or media_type == "none":
+    media_file_ids = get_media_file_ids(item)
+    if not media_file_ids or media_type == "none":
         return "не прикріплено"
     if media_type == "photo":
-        return "фото прикріплено"
+        if len(media_file_ids) == 1:
+            return "1 фото прикріплено"
+        return f"{len(media_file_ids)} фото прикріплено"
     if media_type == "video":
         return "відео прикріплено"
     return f"{media_type} прикріплено"

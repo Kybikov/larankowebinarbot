@@ -21,3 +21,12 @@ def test_registrations_store_answers_as_json() -> None:
 
     assert fields["answers"]["type"] == "json"
     assert fields["phone"]["required"] is True
+
+
+def test_scheduled_messages_store_multiple_media_file_ids() -> None:
+    scheduled_messages = next(
+        collection for collection in collection_definitions() if collection["name"] == "scheduled_messages"
+    )
+    fields = {field["name"]: field for field in scheduled_messages["schema"]}
+
+    assert fields["media_file_ids"]["type"] == "json"

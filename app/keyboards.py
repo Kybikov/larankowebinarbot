@@ -118,11 +118,55 @@ def scheduled_message_keyboard(message_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Додати медіа", callback_data=f"admin:edit_msg_media:{message_id}"),
                 InlineKeyboardButton(text="Очистити медіа", callback_data=f"admin:clear_msg_media:{message_id}"),
             ],
+            [InlineKeyboardButton(text="Кнопки", callback_data=f"admin:msg_buttons:{message_id}")],
             [InlineKeyboardButton(text="Превʼю для себе", callback_data=f"admin:preview_msg:{message_id}")],
             [InlineKeyboardButton(text="Відправити зараз", callback_data=f"admin:send_now:{message_id}")],
             [InlineKeyboardButton(text="Назад до розсилок", callback_data=f"admin:message_back:{message_id}")],
         ]
     )
+
+
+def media_collect_keyboard(message_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Готово", callback_data=f"admin:finish_msg_media:{message_id}")],
+            [InlineKeyboardButton(text="Скасувати", callback_data=f"admin:cancel_msg_media:{message_id}")],
+        ]
+    )
+
+
+MESSAGE_BUTTON_URL_KEYS = {
+    "zoom_url": "Zoom",
+    "course_url": "Програма курсу",
+    "instagram_ola_url": "Instagram Олі",
+    "instagram_school_url": "Instagram школи",
+    "instagram_studio_url": "Instagram студії",
+    "curator_url": "Куратор Telegram",
+}
+
+
+def message_buttons_keyboard(message_id: str, buttons: list[dict]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, button in enumerate(buttons or []):
+        label = button.get("text") or MESSAGE_BUTTON_URL_KEYS.get(button.get("url_key", ""), "Кнопка")
+        rows.append([InlineKeyboardButton(text=f"Видалити: {label}", callback_data=f"admin:del_msg_button:{message_id}:{index}")])
+    rows.extend(
+        [
+            [InlineKeyboardButton(text="Додати кнопку", callback_data=f"admin:add_msg_button:{message_id}")],
+            [InlineKeyboardButton(text="Очистити кнопки", callback_data=f"admin:clear_msg_buttons:{message_id}")],
+            [InlineKeyboardButton(text="Назад", callback_data=f"admin:message:{message_id}")],
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def message_button_url_key_keyboard(message_id: str) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=f"admin:add_msg_button_key:{message_id}:{key}")]
+        for key, label in MESSAGE_BUTTON_URL_KEYS.items()
+    ]
+    rows.append([InlineKeyboardButton(text="Скасувати", callback_data=f"admin:msg_buttons:{message_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def page_keyboard(

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiogram import Bot
+from aiogram.types import InputMediaPhoto
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.keyboards import url_buttons
@@ -30,8 +31,6 @@ async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict
     await pb.update_record("scheduled_messages", scheduled["id"], {"status": "sending"})
     webinar = await pb.get_record("webinars", scheduled["webinar"])
     registrations = await pb.registered_users_for_webinar(webinar["id"])
-    buttons = scheduled.get("buttons") or []
-    keyboard = url_buttons(buttons, webinar)
     errors: list[dict[str, str]] = []
     success_count = 0
 
@@ -71,10 +70,28 @@ async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict
 
 async def deliver_scheduled_message(bot: Bot, scheduled: dict[str, Any], webinar: dict[str, Any], chat_id: int | str) -> None:
     keyboard = url_buttons(scheduled.get("buttons") or [], webinar)
-    media_file_id = scheduled.get("media_file_id") or ""
-    if scheduled.get("media_type") == "photo" and media_file_id:
-        await bot.send_photo(chat_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
-    elif scheduled.get("media_type") == "video" and media_file_id:
-        await bot.send_video(chat_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
+    media_file_ids = get_media_file_ids(scheduled)
+    if scheduled.get("media_type") == "photo" and len(media_file_ids) > 1:
+        media = [
+            InputMediaPhoto(media=file_id, caption=scheduled["text"] if index == 0 else None)
+            for index, file_id in enumerate(media_file_ids)
+        ]
+        await bot.send_media_group(chat_id, media)
+        if keyboard:
+            await bot.send_message(chat_id, "Посилання:", reply_markup=keyboard)
+    elif scheduled.get("media_type") == "photo" and media_file_ids:
+        await bot.send_photo(chat_id, media_file_ids[0], caption=scheduled["text"], reply_markup=keyboard)
+    elif scheduled.get("media_type") == "video" and media_file_ids:
+        await bot.send_video(chat_id, media_file_ids[0], caption=scheduled["text"], reply_markup=keyboard)
     else:
         await bot.send_message(chat_id, scheduled["text"], reply_markup=keyboard)
+
+
+def get_media_file_ids(scheduled: dict[str, Any]) -> list[str]:
+    media_file_ids = scheduled.get("media_file_ids") or []
+    if isinstance(media_file_ids, str):
+        media_file_ids = [media_file_ids] if media_file_ids else []
+    if media_file_ids:
+        return [str(file_id) for file_id in media_file_ids if file_id]
+    media_file_id = scheduled.get("media_file_id") or ""
+    return [str(media_file_id)] if media_file_id else []
