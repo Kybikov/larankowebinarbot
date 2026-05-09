@@ -89,10 +89,30 @@ class PocketBaseClient:
 
     async def ensure_schema(self) -> None:
         collections = await self._request("GET", "/api/collections?perPage=200")
-        existing = {item["name"] for item in collections.get("items", [])}
+        existing = {item["name"]: item for item in collections.get("items", [])}
         for collection in collection_definitions():
             if collection["name"] not in existing:
                 await self._request("POST", "/api/collections", json=collection)
+            elif collection["name"] == "users":
+                await self._ensure_users_telegram_id_is_text(existing["users"])
+
+    async def _ensure_users_telegram_id_is_text(self, users_collection: dict[str, Any]) -> None:
+        telegram_field = next(
+            (field for field in users_collection.get("schema", []) if field.get("name") == "telegram_id"),
+            None,
+        )
+        if not telegram_field or telegram_field.get("type") == "text":
+            return
+        updated_schema = []
+        for field in users_collection.get("schema", []):
+            if field.get("name") == "telegram_id":
+                field = {**field, "type": "text", "options": {"maxSize": 64}}
+            updated_schema.append(field)
+        await self._request(
+            "PATCH",
+            f"/api/collections/{users_collection['id']}",
+            json={"schema": updated_schema},
+        )
 
     async def ensure_default_webinar(self) -> None:
         items = await self.list_records(
@@ -204,8 +224,8 @@ class PocketBaseClient:
         )
 
     async def upsert_user(self, tg_user: Any) -> dict[str, Any]:
-        telegram_id = int(tg_user.id)
-        users = await self.list_records("users", filter_=f"telegram_id={telegram_id}", per_page=1)
+        telegram_id = str(tg_user.id)
+        users = await self.list_records("users", filter_=f'telegram_id="{telegram_id}"', per_page=1)
         payload = {
             "telegram_id": telegram_id,
             "username": tg_user.username or "",
@@ -337,7 +357,7 @@ def collection_definitions() -> list[dict[str, Any]]:
             "type": "base",
             "system": False,
             "schema": [
-                {"name": "telegram_id", "type": "number", "required": True, "options": {"noDecimal": True}},
+                {"name": "telegram_id", "type": "text", "required": True, "options": {"maxSize": 64}},
                 {"name": "username", "type": "text", "required": False, "options": {}},
                 {"name": "first_name", "type": "text", "required": False, "options": {}},
                 {"name": "last_name", "type": "text", "required": False, "options": {}},
