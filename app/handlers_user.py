@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from app.content import REGISTRATION_QUESTIONS
 from app.formatting import admin_registration_text
 from app.keyboards import choice_keyboard, links_keyboard, start_keyboard
-from app.pocketbase import PocketBaseClient
+from app.pocketbase import USER_COLLECTION, PocketBaseClient
 
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
             return
 
         webinar = await pb.get_record("webinars", data["webinar_id"])
-        user = await pb.get_record("users", data["user_id"])
+        user = await pb.get_record(USER_COLLECTION, data["user_id"])
         await pb.save_registration(user_id=user["id"], webinar_id=webinar["id"], answers=answers)
         await state.clear()
         await message.answer(

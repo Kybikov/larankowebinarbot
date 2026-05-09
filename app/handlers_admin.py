@@ -11,7 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.content import CONFIRMATION_TEXT, WELCOME_TEXT, default_scheduled_messages
 from app.keyboards import admin_keyboard, scheduled_message_keyboard, webinar_admin_keyboard, webinar_links_keyboard
-from app.pocketbase import PocketBaseClient
+from app.pocketbase import USER_COLLECTION, PocketBaseClient
 from app.scheduler import send_scheduled_message
 
 
@@ -75,7 +75,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
     async def stats(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
-        users = await pb.list_all_records("users")
+        users = await pb.list_all_records(USER_COLLECTION)
         webinars = await pb.list_all_records("webinars")
         registrations = await pb.list_all_records("registrations")
         pending = await pb.list_all_records("scheduled_messages", filter_='status="pending"')
@@ -92,7 +92,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
     async def users(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
-        records = await pb.list_records("users", sort="-last_seen_at", per_page=20)
+        records = await pb.list_records(USER_COLLECTION, sort="-last_seen_at", per_page=20)
         if not records:
             text = "Користувачів поки немає."
         else:

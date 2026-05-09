@@ -5,7 +5,7 @@ def test_collection_definitions_include_required_collections() -> None:
     names = {collection["name"] for collection in collection_definitions()}
 
     assert names == {
-        "users",
+        "tg_users",
         "webinars",
         "registrations",
         "scheduled_messages",

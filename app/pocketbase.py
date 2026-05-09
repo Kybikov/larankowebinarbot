@@ -16,6 +16,9 @@ class PocketBaseError(RuntimeError):
     pass
 
 
+USER_COLLECTION = "tg_users"
+
+
 class PocketBaseClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -93,26 +96,6 @@ class PocketBaseClient:
         for collection in collection_definitions():
             if collection["name"] not in existing:
                 await self._request("POST", "/api/collections", json=collection)
-            elif collection["name"] == "users":
-                await self._ensure_users_telegram_id_is_text(existing["users"])
-
-    async def _ensure_users_telegram_id_is_text(self, users_collection: dict[str, Any]) -> None:
-        telegram_field = next(
-            (field for field in users_collection.get("schema", []) if field.get("name") == "telegram_id"),
-            None,
-        )
-        if not telegram_field or telegram_field.get("type") == "text":
-            return
-        updated_schema = []
-        for field in users_collection.get("schema", []):
-            if field.get("name") == "telegram_id":
-                field = {**field, "type": "text", "options": {"maxSize": 64}}
-            updated_schema.append(field)
-        await self._request(
-            "PATCH",
-            f"/api/collections/{users_collection['id']}",
-            json={"schema": updated_schema},
-        )
 
     async def ensure_default_webinar(self) -> None:
         items = await self.list_records(
@@ -225,7 +208,7 @@ class PocketBaseClient:
 
     async def upsert_user(self, tg_user: Any) -> dict[str, Any]:
         telegram_id = str(tg_user.id)
-        users = await self.list_records("users", filter_=f'telegram_id="{telegram_id}"', per_page=1)
+        users = await self.list_records(USER_COLLECTION, filter_=f'telegram_id="{telegram_id}"', per_page=1)
         payload = {
             "telegram_id": telegram_id,
             "username": tg_user.username or "",
@@ -235,9 +218,9 @@ class PocketBaseClient:
             "last_seen_at": datetime.now(timezone.utc).isoformat(),
         }
         if users:
-            return await self.update_record("users", users[0]["id"], payload)
+            return await self.update_record(USER_COLLECTION, users[0]["id"], payload)
         payload["first_seen_at"] = payload["last_seen_at"]
-        return await self.create_record("users", payload)
+        return await self.create_record(USER_COLLECTION, payload)
 
     async def active_webinar(self) -> dict[str, Any]:
         webinars = await self.list_records(
@@ -293,7 +276,7 @@ class PocketBaseClient:
         )
         for registration in registrations:
             try:
-                registration["user_record"] = await self.get_record("users", registration["user"])
+                registration["user_record"] = await self.get_record(USER_COLLECTION, registration["user"])
             except PocketBaseError:
                 registration["user_record"] = {}
         return registrations
@@ -325,7 +308,7 @@ class PocketBaseClient:
             user_id = item.get("user", "")
             webinar_id = item.get("webinar", "")
             if user_id and user_id not in user_cache:
-                user_cache[user_id] = await self.get_record("users", user_id)
+                user_cache[user_id] = await self.get_record(USER_COLLECTION, user_id)
             if webinar_id and webinar_id not in webinar_cache:
                 webinar_cache[webinar_id] = await self.get_record("webinars", webinar_id)
             user = user_cache.get(user_id, {})
@@ -353,7 +336,7 @@ class PocketBaseClient:
 def collection_definitions() -> list[dict[str, Any]]:
     definitions = [
         {
-            "name": "users",
+            "name": USER_COLLECTION,
             "type": "base",
             "system": False,
             "schema": [
@@ -365,7 +348,7 @@ def collection_definitions() -> list[dict[str, Any]]:
                 {"name": "first_seen_at", "type": "date", "required": False, "options": {}},
                 {"name": "last_seen_at", "type": "date", "required": False, "options": {}},
             ],
-            "indexes": ["CREATE UNIQUE INDEX idx_users_telegram_id ON users (telegram_id)"],
+            "indexes": ["CREATE UNIQUE INDEX idx_tg_users_telegram_id ON tg_users (telegram_id)"],
         },
         {
             "name": "webinars",
