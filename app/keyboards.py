@@ -62,8 +62,23 @@ def webinar_admin_keyboard(webinar_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}"),
                 InlineKeyboardButton(text="Опублікувати", callback_data=f"admin:publish:{webinar_id}"),
             ],
+            [InlineKeyboardButton(text="Посилання", callback_data=f"admin:links:{webinar_id}")],
             [InlineKeyboardButton(text="Розсилки", callback_data=f"admin:messages:{webinar_id}")],
             [InlineKeyboardButton(text="Назад", callback_data="admin:panel")],
+        ]
+    )
+
+
+def webinar_links_keyboard(webinar_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Zoom", callback_data=f"admin:edit_link:{webinar_id}:zoom_url")],
+            [InlineKeyboardButton(text="Програма курсу", callback_data=f"admin:edit_link:{webinar_id}:course_url")],
+            [InlineKeyboardButton(text="Instagram Оли", callback_data=f"admin:edit_link:{webinar_id}:instagram_ola_url")],
+            [InlineKeyboardButton(text="Instagram школи", callback_data=f"admin:edit_link:{webinar_id}:instagram_school_url")],
+            [InlineKeyboardButton(text="Instagram студії", callback_data=f"admin:edit_link:{webinar_id}:instagram_studio_url")],
+            [InlineKeyboardButton(text="Куратор Telegram", callback_data=f"admin:edit_link:{webinar_id}:curator_username")],
+            [InlineKeyboardButton(text="Назад", callback_data="admin:webinars")],
         ]
     )
 

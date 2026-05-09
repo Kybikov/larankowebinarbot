@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
@@ -9,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.content import CONFIRMATION_TEXT, WELCOME_TEXT, default_scheduled_messages
-from app.keyboards import admin_keyboard, scheduled_message_keyboard, webinar_admin_keyboard
+from app.keyboards import admin_keyboard, scheduled_message_keyboard, webinar_admin_keyboard, webinar_links_keyboard
 from app.pocketbase import PocketBaseClient
 from app.scheduler import send_scheduled_message
 
@@ -18,6 +19,20 @@ class WebinarCreateState(StatesGroup):
     title = State()
     scheduled_at = State()
     zoom_url = State()
+
+
+class LinkEditState(StatesGroup):
+    value = State()
+
+
+LINK_FIELDS = {
+    "zoom_url": "Zoom",
+    "course_url": "Програма курсу",
+    "instagram_ola_url": "Instagram Оли",
+    "instagram_school_url": "Instagram школи",
+    "instagram_studio_url": "Instagram студії",
+    "curator_username": "Куратор Telegram",
+}
 
 
 def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezone_name: str) -> Router:
@@ -111,6 +126,66 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await pb.update_record("webinars", webinar_id, {"status": "published"})
         await callback.message.answer("Вебінар опубліковано.")
         await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:links:"))
+    async def links(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        webinar_id = callback.data.rsplit(":", 1)[1]
+        webinar = await pb.get_record("webinars", webinar_id)
+        lines = [f"<b>Посилання для вебінару</b>\n{webinar.get('title', '')}\n"]
+        for key, label in LINK_FIELDS.items():
+            value = webinar.get(key) or "не задано"
+            if key == "curator_username" and value != "не задано":
+                value = "@" + str(value).lstrip("@")
+            lines.append(f"<b>{label}:</b> {escape(str(value))}")
+        await callback.message.answer(
+            "\n".join(lines),
+            reply_markup=webinar_links_keyboard(webinar_id),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:edit_link:"))
+    async def edit_link_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        _, _, webinar_id, field = callback.data.split(":", 3)
+        if field not in LINK_FIELDS:
+            await callback.answer("Поле не знайдено", show_alert=True)
+            return
+        webinar = await pb.get_record("webinars", webinar_id)
+        current_value = webinar.get(field) or "не задано"
+        await state.set_state(LinkEditState.value)
+        await state.update_data(webinar_id=webinar_id, field=field)
+        await callback.message.answer(
+            f"Введіть нове значення для <b>{LINK_FIELDS[field]}</b>.\n\n"
+            f"Поточне значення: <code>{escape(str(current_value))}</code>\n\n"
+            "Щоб очистити поле, надішліть `-`."
+        )
+        await callback.answer()
+
+    @router.message(LinkEditState.value)
+    async def edit_link_finish(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        data = await state.get_data()
+        field = data["field"]
+        webinar_id = data["webinar_id"]
+        value = (message.text or "").strip()
+        if value == "-":
+            value = ""
+        if field == "curator_username":
+            value = value.lstrip("@")
+        elif value and not value.startswith(("http://", "https://")):
+            await message.answer("Посилання має починатися з http:// або https://. Спробуйте ще раз.")
+            return
+        webinar = await pb.update_record("webinars", webinar_id, {field: value})
+        await state.clear()
+        shown_value = ("@" + value) if field == "curator_username" and value else (value or "очищено")
+        await message.answer(
+            f"Готово. <b>{LINK_FIELDS[field]}</b>: {escape(shown_value)}",
+            reply_markup=webinar_links_keyboard(webinar["id"]),
+        )
 
     @router.callback_query(F.data.startswith("admin:messages:"))
     async def messages(callback: CallbackQuery) -> None:
