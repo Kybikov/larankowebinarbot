@@ -331,7 +331,7 @@ class PocketBaseClient:
 
 
 def collection_definitions() -> list[dict[str, Any]]:
-    return [
+    definitions = [
         {
             "name": "users",
             "type": "base",
@@ -416,3 +416,9 @@ def collection_definitions() -> list[dict[str, Any]]:
             "indexes": [],
         },
     ]
+    for collection in definitions:
+        for field in collection["schema"]:
+            if field["type"] == "text":
+                field.setdefault("options", {})
+                field["options"].setdefault("maxSize", 2000)
+    return definitions
