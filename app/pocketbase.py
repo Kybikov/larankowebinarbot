@@ -309,7 +309,6 @@ class PocketBaseClient:
                 "phone",
                 "design_stage",
                 "realization_experience",
-                "biggest_fear",
                 "speaker_question",
             ]
         )
@@ -337,7 +336,6 @@ class PocketBaseClient:
                     item.get("phone", ""),
                     answers.get("design_stage", ""),
                     answers.get("realization_experience", ""),
-                    answers.get("biggest_fear", ""),
                     answers.get("speaker_question", ""),
                 ]
             )

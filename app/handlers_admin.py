@@ -627,7 +627,6 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             "phone": "Телефон",
             "design_stage": "Етап у дизайні",
             "realization_experience": "Досвід реалізації",
-            "biggest_fear": "Що лякає/виснажує",
             "speaker_question": "Питання до Оли",
         }
         answer_lines = [

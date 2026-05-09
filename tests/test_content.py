@@ -10,7 +10,6 @@ def test_registration_questions_match_required_flow() -> None:
         "phone",
         "design_stage",
         "realization_experience",
-        "biggest_fear",
         "speaker_question",
     ]
 
