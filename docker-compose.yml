@@ -1,7 +1,7 @@
 services:
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:0.22.25
-    command: ["serve", "--http=0.0.0.0:8090"]
+    command: ["--http=0.0.0.0:8090"]
     restart: unless-stopped
     environment:
       PB_ADMIN_EMAIL: "${POCKETBASE_ADMIN_EMAIL}"
