@@ -79,6 +79,20 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
             return
         await save_answer_and_continue(message, state, text)
 
+    @router.message()
+    async def fallback_start(message: Message, state: FSMContext) -> None:
+        current_state = await state.get_state()
+        if current_state:
+            logger.info("Ignoring fallback while state=%s for user_id=%s", current_state, message.from_user.id)
+            return
+        logger.info(
+            "Handling fallback start for user_id=%s username=%s text=%r",
+            message.from_user.id,
+            message.from_user.username,
+            message.text,
+        )
+        await start(message, state)
+
     async def ask_question(message: Message, step: int) -> None:
         question = REGISTRATION_QUESTIONS[step]
         keyboard = None
