@@ -421,4 +421,7 @@ def collection_definitions() -> list[dict[str, Any]]:
             if field["type"] == "text":
                 field.setdefault("options", {})
                 field["options"].setdefault("maxSize", 2000)
+            if field["type"] == "json":
+                field.setdefault("options", {})
+                field["options"].setdefault("maxSize", 200000)
     return definitions
