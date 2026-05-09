@@ -15,6 +15,14 @@ from app.pocketbase import PocketBaseClient
 from app.scheduler import send_scheduled_message
 
 
+DATE_INPUT_HINT = (
+    "Введіть дату і час вебінару за Києвом.\n\n"
+    "Наприклад:\n"
+    "20.05.2026 18:00\n\n"
+    "Також підійде формат: 2026-05-20 18:00"
+)
+
+
 class WebinarCreateState(StatesGroup):
     title = State()
     scheduled_at = State()
@@ -246,16 +254,16 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             return
         await state.update_data(title=(message.text or "").strip())
         await state.set_state(WebinarCreateState.scheduled_at)
-        await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM за Києвом.")
+        await message.answer(DATE_INPUT_HINT)
 
     @router.message(WebinarCreateState.scheduled_at)
     async def create_date(message: Message, state: FSMContext) -> None:
         if not is_admin(message.from_user.id):
             return
         try:
-            naive = datetime.strptime((message.text or "").strip(), "%Y-%m-%d %H:%M")
+            naive = parse_admin_datetime(message.text or "")
         except ValueError:
-            await message.answer("Не вдалося прочитати дату. Приклад: 2026-05-20 18:00")
+            await message.answer("Не вдалося прочитати дату.\n\n" + DATE_INPUT_HINT)
             return
         await state.update_data(scheduled_at=naive.replace(tzinfo=ZoneInfo(timezone_name)).isoformat())
         await state.set_state(WebinarCreateState.zoom_url)
@@ -306,3 +314,19 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await message.answer("Вебінар створено як чернетку.", reply_markup=webinar_admin_keyboard(webinar["id"]))
 
     return router
+
+
+def parse_admin_datetime(value: str) -> datetime:
+    clean_value = " ".join(value.strip().split())
+    formats = (
+        "%d.%m.%Y %H:%M",
+        "%d/%m/%Y %H:%M",
+        "%Y-%m-%d %H:%M",
+        "%d.%m.%y %H:%M",
+    )
+    for fmt in formats:
+        try:
+            return datetime.strptime(clean_value, fmt)
+        except ValueError:
+            pass
+    raise ValueError("Unsupported datetime format")
