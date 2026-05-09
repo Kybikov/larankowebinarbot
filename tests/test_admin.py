@@ -1,4 +1,4 @@
-from app.handlers_admin import parse_admin_datetime
+from app.handlers_admin import media_label, parse_admin_datetime
 
 
 def test_parse_admin_datetime_accepts_human_ukrainian_format() -> None:
@@ -17,3 +17,8 @@ def test_parse_admin_datetime_keeps_iso_like_format() -> None:
     assert parsed.year == 2026
     assert parsed.month == 5
     assert parsed.day == 20
+
+
+def test_media_label_requires_file_id() -> None:
+    assert media_label({"media_type": "video", "media_file_id": ""}) == "не прикріплено"
+    assert media_label({"media_type": "photo", "media_file_id": "abc"}) == "фото прикріплено"

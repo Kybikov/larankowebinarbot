@@ -21,6 +21,11 @@ async def run_due_broadcasts(bot: Bot, pb: PocketBaseClient) -> None:
         await send_scheduled_message(bot, pb, scheduled)
 
 
+async def send_message_preview(bot: Bot, pb: PocketBaseClient, scheduled: dict[str, Any], chat_id: int) -> None:
+    webinar = await pb.get_record("webinars", scheduled["webinar"])
+    await deliver_scheduled_message(bot, scheduled, webinar, chat_id)
+
+
 async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict[str, Any]) -> dict[str, Any]:
     await pb.update_record("scheduled_messages", scheduled["id"], {"status": "sending"})
     webinar = await pb.get_record("webinars", scheduled["webinar"])
@@ -36,13 +41,7 @@ async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict
         if not telegram_id:
             continue
         try:
-            media_file_id = scheduled.get("media_file_id") or ""
-            if scheduled.get("media_type") == "photo" and media_file_id:
-                await bot.send_photo(telegram_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
-            elif scheduled.get("media_type") == "video" and media_file_id:
-                await bot.send_video(telegram_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
-            else:
-                await bot.send_message(telegram_id, scheduled["text"], reply_markup=keyboard)
+            await deliver_scheduled_message(bot, scheduled, webinar, telegram_id)
             success_count += 1
         except Exception as exc:
             errors.append({"telegram_id": str(telegram_id), "error": str(exc)})
@@ -68,3 +67,14 @@ async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict
         "failure_count": failure_count,
         "errors": errors,
     }
+
+
+async def deliver_scheduled_message(bot: Bot, scheduled: dict[str, Any], webinar: dict[str, Any], chat_id: int | str) -> None:
+    keyboard = url_buttons(scheduled.get("buttons") or [], webinar)
+    media_file_id = scheduled.get("media_file_id") or ""
+    if scheduled.get("media_type") == "photo" and media_file_id:
+        await bot.send_photo(chat_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
+    elif scheduled.get("media_type") == "video" and media_file_id:
+        await bot.send_video(chat_id, media_file_id, caption=scheduled["text"], reply_markup=keyboard)
+    else:
+        await bot.send_message(chat_id, scheduled["text"], reply_markup=keyboard)

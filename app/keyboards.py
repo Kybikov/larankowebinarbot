@@ -77,14 +77,10 @@ def webinar_admin_keyboard(webinar_id: str, status: str = "") -> InlineKeyboardM
     status_rows: list[list[InlineKeyboardButton]] = []
     if status == "published":
         status_rows.append(
-            [InlineKeyboardButton(text="Зняти з публікації", callback_data=f"admin:draft:{webinar_id}")]
+            [InlineKeyboardButton(text="Деактивувати", callback_data=f"admin:deactivate:{webinar_id}")]
         )
-        status_rows.append([InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}")])
-    elif status == "archived":
-        status_rows.append([InlineKeyboardButton(text="Опублікувати знову", callback_data=f"admin:publish:{webinar_id}")])
     else:
-        status_rows.append([InlineKeyboardButton(text="Опублікувати", callback_data=f"admin:publish:{webinar_id}")])
-        status_rows.append([InlineKeyboardButton(text="Архівувати", callback_data=f"admin:archive:{webinar_id}")])
+        status_rows.append([InlineKeyboardButton(text="Зробити активним", callback_data=f"admin:activate:{webinar_id}")])
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -122,6 +118,7 @@ def scheduled_message_keyboard(message_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Додати медіа", callback_data=f"admin:edit_msg_media:{message_id}"),
                 InlineKeyboardButton(text="Очистити медіа", callback_data=f"admin:clear_msg_media:{message_id}"),
             ],
+            [InlineKeyboardButton(text="Превʼю для себе", callback_data=f"admin:preview_msg:{message_id}")],
             [InlineKeyboardButton(text="Відправити зараз", callback_data=f"admin:send_now:{message_id}")],
             [InlineKeyboardButton(text="Назад до розсилок", callback_data=f"admin:message_back:{message_id}")],
         ]

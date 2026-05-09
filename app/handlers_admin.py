@@ -21,7 +21,7 @@ from app.keyboards import (
     webinar_links_keyboard,
 )
 from app.pocketbase import USER_COLLECTION, PocketBaseClient
-from app.scheduler import send_scheduled_message
+from app.scheduler import send_message_preview, send_scheduled_message
 
 
 DATE_INPUT_HINT = (
@@ -60,9 +60,9 @@ LINK_FIELDS = {
 
 
 STATUS_DESCRIPTIONS = {
-    "draft": "чернетка, користувачі її не бачать",
-    "published": "активний вебінар для /start і реєстрацій",
-    "archived": "архів, користувачі її не бачать",
+    "draft": "неактивний, користувачі його не бачать",
+    "published": "активний для /start і реєстрацій",
+    "archived": "неактивний, користувачі його не бачать",
 }
 
 
@@ -135,43 +135,34 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         for webinar in records:
             registrations = await pb.list_all_records("registrations", filter_=f'webinar="{webinar["id"]}"')
             status = webinar.get("status", "")
-            status_description = STATUS_DESCRIPTIONS.get(status, "")
+            visible_status = "active" if status == "published" else "inactive"
+            status_description = STATUS_DESCRIPTIONS.get(status, STATUS_DESCRIPTIONS["draft"])
             await callback.message.answer(
                 f"<b>{webinar.get('title')}</b>\n"
                 f"ID: <code>{webinar.get('id')}</code>\n"
                 f"Дата: {format_datetime_with_tz(webinar.get('scheduled_at'), timezone_name)}\n"
-                f"Статус: <b>{status}</b>"
-                f"{f' — {status_description}' if status_description else ''}\n"
+                f"Статус: <b>{visible_status}</b> — {status_description}\n"
                 f"Реєстрацій: <b>{len(registrations)}</b>",
                 reply_markup=webinar_admin_keyboard(webinar["id"], status),
             )
         await callback.answer()
 
-    @router.callback_query(F.data.startswith("admin:archive:"))
-    async def archive(callback: CallbackQuery) -> None:
-        if not is_admin(callback.from_user.id):
-            return
-        webinar_id = callback.data.rsplit(":", 1)[1]
-        await pb.update_record("webinars", webinar_id, {"status": "archived"})
-        await callback.message.answer("Вебінар архівовано.")
-        await callback.answer()
-
-    @router.callback_query(F.data.startswith("admin:draft:"))
-    async def draft(callback: CallbackQuery) -> None:
+    @router.callback_query(F.data.startswith("admin:deactivate:"))
+    async def deactivate(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
         webinar_id = callback.data.rsplit(":", 1)[1]
         await pb.update_record("webinars", webinar_id, {"status": "draft"})
-        await callback.message.answer("Вебінар знято з публікації. Тепер користувачі не бачать його в /start.")
+        await callback.message.answer("Вебінар деактивовано. Користувачі не бачать його в /start.")
         await callback.answer()
 
-    @router.callback_query(F.data.startswith("admin:publish:"))
-    async def publish(callback: CallbackQuery) -> None:
+    @router.callback_query(F.data.startswith("admin:activate:"))
+    async def activate(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
         webinar_id = callback.data.rsplit(":", 1)[1]
         await pb.update_record("webinars", webinar_id, {"status": "published"})
-        await callback.message.answer("Вебінар опубліковано. Тепер він активний для /start і реєстрацій.")
+        await callback.message.answer("Вебінар активовано. Тепер він відкривається через /start і приймає реєстрації.")
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:links:"))
@@ -258,7 +249,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             lines.append(
                 f"{index}. <b>{escape(item.get('title', 'Повідомлення'))}</b>\n"
                 f"   Час: {format_datetime_with_tz(item.get('send_at'), timezone_name)}\n"
-                f"   Статус: {escape(item.get('status') or '-')}, медіа: {escape(item.get('media_type') or 'none')}"
+                f"   Статус: {escape(item.get('status') or '-')}, медіа: {escape(media_label(item))}"
             )
         await callback.message.answer(
             "\n".join(lines),
@@ -280,7 +271,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             f"ID: <code>{item['id']}</code>\n"
             f"Час: {format_datetime_with_tz(item.get('send_at'), timezone_name)}\n"
             f"Статус: <b>{escape(item.get('status') or '-')}</b>\n"
-            f"Медіа: <b>{escape(item.get('media_type') or 'none')}</b>{' ✅' if item.get('media_file_id') else ''}\n\n"
+            f"Медіа: <b>{escape(media_label(item))}</b>\n\n"
             f"<b>Текст:</b>\n{escape(preview)}",
             reply_markup=scheduled_message_keyboard(item["id"]),
         )
@@ -408,6 +399,16 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             {"media_type": "none", "media_file_id": "", "status": "pending"},
         )
         await callback.message.answer("Медіа очищено.", reply_markup=scheduled_message_keyboard(item["id"]))
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:preview_msg:"))
+    async def preview_message(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        scheduled = await pb.get_record("scheduled_messages", message_id)
+        await callback.message.answer("Превʼю нижче. Саме так повідомлення побачить користувач:")
+        await send_message_preview(callback.bot, pb, scheduled, callback.from_user.id)
         await callback.answer()
 
     @router.callback_query(F.data.startswith("admin:registrations:"))
@@ -569,7 +570,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
                 },
             )
         await state.clear()
-        await message.answer("Вебінар створено як чернетку.", reply_markup=webinar_admin_keyboard(webinar["id"], "draft"))
+        await message.answer("Вебінар створено як неактивний.", reply_markup=webinar_admin_keyboard(webinar["id"], "draft"))
 
     return router
 
@@ -588,3 +589,14 @@ def parse_admin_datetime(value: str) -> datetime:
         except ValueError:
             pass
     raise ValueError("Unsupported datetime format")
+
+
+def media_label(item: dict) -> str:
+    media_type = item.get("media_type") or "none"
+    if not item.get("media_file_id") or media_type == "none":
+        return "не прикріплено"
+    if media_type == "photo":
+        return "фото прикріплено"
+    if media_type == "video":
+        return "відео прикріплено"
+    return f"{media_type} прикріплено"
