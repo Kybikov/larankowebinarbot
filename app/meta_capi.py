@@ -48,6 +48,8 @@ class MetaConversionsClient:
                 }
             ]
         }
+        if self.settings.meta_test_event_code:
+            payload["test_event_code"] = self.settings.meta_test_event_code
         payload["data"][0] = {key: value for key, value in payload["data"][0].items() if value}
 
         url = f"https://graph.facebook.com/v19.0/{pixel_id}/events"

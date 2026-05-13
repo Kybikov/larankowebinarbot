@@ -27,6 +27,7 @@ class Settings:
     meta_pixel_id: str
     meta_access_token: str
     meta_action_source: str
+    meta_test_event_code: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -59,6 +60,7 @@ class Settings:
             meta_pixel_id=os.getenv("META_PIXEL_ID", "").strip(),
             meta_access_token=os.getenv("META_ACCESS_TOKEN", "").strip(),
             meta_action_source=os.getenv("META_ACTION_SOURCE", "website").strip(),
+            meta_test_event_code=os.getenv("META_TEST_EVENT_CODE", "").strip(),
         )
 
 
