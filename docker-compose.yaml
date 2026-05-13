@@ -40,6 +40,7 @@ services:
       - "${ATTRIBUTION_PORT:-8080}"
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
       - "traefik.http.routers.laranko-attribution-http.entryPoints=http"
       - "traefik.http.routers.laranko-attribution-http.rule=Host(`laranko.wtmelon.store`) && PathPrefix(`/tg/start`)"
       - "traefik.http.routers.laranko-attribution-http.middlewares=redirect-to-https"
@@ -52,7 +53,7 @@ services:
       - "traefik.http.routers.laranko-attribution-https.tls=true"
       - "traefik.http.routers.laranko-attribution-https.tls.certresolver=letsencrypt"
       - "traefik.http.routers.laranko-attribution-https.service=laranko-attribution"
-      - "traefik.http.services.laranko-attribution.loadbalancer.server.port=${ATTRIBUTION_PORT:-8080}"
+      - "traefik.http.services.laranko-attribution.loadbalancer.server.port=8080"
     networks:
       - default
       - coolify
