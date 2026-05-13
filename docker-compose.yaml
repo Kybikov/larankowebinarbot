@@ -36,8 +36,30 @@ services:
       META_PIXEL_ID: "${META_PIXEL_ID}"
       META_ACCESS_TOKEN: "${META_ACCESS_TOKEN}"
       META_ACTION_SOURCE: "${META_ACTION_SOURCE:-website}"
-    ports:
-      - "${ATTRIBUTION_PORT:-8080}:${ATTRIBUTION_PORT:-8080}"
+    expose:
+      - "${ATTRIBUTION_PORT:-8080}"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.laranko-attribution-http.entryPoints=http"
+      - "traefik.http.routers.laranko-attribution-http.rule=Host(`laranko.wtmelon.store`) && PathPrefix(`/tg/start`)"
+      - "traefik.http.routers.laranko-attribution-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.laranko-attribution-http.priority=100"
+      - "traefik.http.routers.laranko-attribution-http.service=laranko-attribution"
+      - "traefik.http.routers.laranko-attribution-https.entryPoints=https"
+      - "traefik.http.routers.laranko-attribution-https.rule=Host(`laranko.wtmelon.store`) && PathPrefix(`/tg/start`)"
+      - "traefik.http.routers.laranko-attribution-https.middlewares=gzip"
+      - "traefik.http.routers.laranko-attribution-https.priority=100"
+      - "traefik.http.routers.laranko-attribution-https.tls=true"
+      - "traefik.http.routers.laranko-attribution-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.laranko-attribution-https.service=laranko-attribution"
+      - "traefik.http.services.laranko-attribution.loadbalancer.server.port=${ATTRIBUTION_PORT:-8080}"
+    networks:
+      - default
+      - coolify
 
 volumes:
   pocketbase_data:
+
+networks:
+  coolify:
+    external: true
