@@ -29,6 +29,15 @@ services:
       INSTAGRAM_SCHOOL_URL: "${INSTAGRAM_SCHOOL_URL:-https://www.instagram.com/laranko_study}"
       INSTAGRAM_STUDIO_URL: "${INSTAGRAM_STUDIO_URL:-https://www.instagram.com/laranko_interior}"
       CURATOR_USERNAME: "${CURATOR_USERNAME:-Laranko_Academy}"
+      BOT_USERNAME: "${BOT_USERNAME:-larankowebirnar_bot}"
+      ATTRIBUTION_HOST: "0.0.0.0"
+      ATTRIBUTION_PORT: "${ATTRIBUTION_PORT:-8080}"
+      ATTRIBUTION_PUBLIC_BASE_URL: "${ATTRIBUTION_PUBLIC_BASE_URL:-https://laranko.wtmelon.store}"
+      META_PIXEL_ID: "${META_PIXEL_ID}"
+      META_ACCESS_TOKEN: "${META_ACCESS_TOKEN}"
+      META_ACTION_SOURCE: "${META_ACTION_SOURCE:-website}"
+    ports:
+      - "${ATTRIBUTION_PORT:-8080}:${ATTRIBUTION_PORT:-8080}"
 
 volumes:
   pocketbase_data:

@@ -7,9 +7,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+from app.attribution import start_attribution_server
 from app.config import Settings
 from app.handlers_admin import build_admin_router
 from app.handlers_user import build_user_router
+from app.meta_capi import MetaConversionsClient
 from app.pocketbase import PocketBaseClient
 from app.scheduler import build_scheduler
 
@@ -26,12 +28,15 @@ async def main() -> None:
     async with PocketBaseClient(settings) as pb:
         await pb.ensure_schema()
         await pb.ensure_default_webinar()
+        meta = MetaConversionsClient(settings)
+        attribution_runner = await start_attribution_server(settings, pb)
         dispatcher.include_router(build_admin_router(pb, settings.admin_ids, settings.timezone))
-        dispatcher.include_router(build_user_router(pb, settings.admin_ids))
+        dispatcher.include_router(build_user_router(pb, settings.admin_ids, meta))
         scheduler = build_scheduler(bot, pb)
         scheduler.start()
         try:
             await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
         finally:
             scheduler.shutdown(wait=False)
+            await attribution_runner.cleanup()
             await bot.session.close()

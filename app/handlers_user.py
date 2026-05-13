@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
@@ -11,6 +12,7 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from app.content import REGISTRATION_QUESTIONS
 from app.formatting import admin_registration_text
 from app.keyboards import choice_keyboard, links_keyboard, name_keyboard, phone_keyboard, start_keyboard
+from app.meta_capi import MetaConversionsClient
 from app.pocketbase import USER_COLLECTION, PocketBaseClient
 
 
@@ -21,14 +23,15 @@ class RegistrationState(StatesGroup):
     answering = State()
 
 
-def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Router:
+def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], meta: MetaConversionsClient | None = None) -> Router:
     router = Router()
 
     @router.message(CommandStart())
-    async def start(message: Message, state: FSMContext) -> None:
+    async def start(message: Message, state: FSMContext, command: CommandObject | None = None) -> None:
         logger.info("Handling /start for user_id=%s username=%s", message.from_user.id, message.from_user.username)
         await state.clear()
-        await pb.upsert_user(message.from_user)
+        user = await pb.upsert_user(message.from_user)
+        await handle_start_attribution(command.args if command else "", user, message.from_user.id)
         webinar = await pb.active_webinar()
         await message.answer(webinar.get("description") or "", reply_markup=start_keyboard())
 
@@ -121,7 +124,7 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
             message.from_user.username,
             message.text,
         )
-        await start(message, state)
+        await start(message, state, None)
 
     async def ask_question(message: Message, step: int) -> None:
         question = REGISTRATION_QUESTIONS[step]
@@ -150,6 +153,7 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
         webinar = await pb.get_record("webinars", data["webinar_id"])
         user = await pb.get_record(USER_COLLECTION, data["user_id"])
         await pb.save_registration(user_id=user["id"], webinar_id=webinar["id"], answers=answers)
+        await handle_registration_attribution(user, message.from_user.id)
         await state.clear()
         await message.answer(
             webinar.get("confirmation_text") or "Готово, ви успішно зареєстровані 🤍",
@@ -161,5 +165,44 @@ def build_user_router(pb: PocketBaseClient, admin_ids: tuple[int, ...]) -> Route
                 await message.bot.send_message(admin_id, notification)
             except Exception:
                 pass
+
+    async def handle_start_attribution(start_payload: str | None, user: dict, telegram_id: int) -> None:
+        if not start_payload:
+            return
+        attribution = await pb.attribution_by_token(start_payload.strip())
+        if not attribution:
+            logger.info("No attribution token found for /start payload=%s", start_payload)
+            return
+        if attribution.get("started_at"):
+            logger.info("Attribution token %s was already started", attribution.get("token"))
+            return
+        event_id = f"tg_start_{attribution['token']}_{secrets.token_hex(6)}"
+        attribution = await pb.mark_attribution_started(
+            attribution,
+            user_id=user["id"],
+            telegram_id=telegram_id,
+            event_id=event_id,
+        )
+        if meta:
+            await meta.send_event(
+                event_name="Lead",
+                attribution=attribution,
+                telegram_id=telegram_id,
+                event_id=event_id,
+            )
+
+    async def handle_registration_attribution(user: dict, telegram_id: int) -> None:
+        attribution = await pb.latest_started_attribution_for_user(user["id"])
+        if not attribution or attribution.get("registration_event_id"):
+            return
+        event_id = f"complete_registration_{attribution['token']}_{secrets.token_hex(6)}"
+        if meta:
+            await meta.send_event(
+                event_name="CompleteRegistration",
+                attribution=attribution,
+                telegram_id=telegram_id,
+                event_id=event_id,
+            )
+        await pb.mark_attribution_registered(attribution, event_id=event_id)
 
     return router

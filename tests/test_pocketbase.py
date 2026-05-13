@@ -9,6 +9,7 @@ def test_collection_definitions_include_required_collections() -> None:
         "webinars",
         "registrations",
         "scheduled_messages",
+        "attribution_tokens",
         "broadcast_logs",
     }
 
@@ -30,3 +31,16 @@ def test_scheduled_messages_store_multiple_media_file_ids() -> None:
     fields = {field["name"]: field for field in scheduled_messages["schema"]}
 
     assert fields["media_file_ids"]["type"] == "json"
+
+
+def test_attribution_tokens_store_meta_click_context() -> None:
+    attribution_tokens = next(
+        collection for collection in collection_definitions() if collection["name"] == "attribution_tokens"
+    )
+    fields = {field["name"]: field for field in attribution_tokens["schema"]}
+
+    assert fields["token"]["required"] is True
+    assert fields["pixel_id"]["type"] == "text"
+    assert fields["fbclid"]["type"] == "text"
+    assert fields["fbp"]["type"] == "text"
+    assert fields["utm"]["type"] == "json"

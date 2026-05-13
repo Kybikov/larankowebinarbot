@@ -15,6 +15,8 @@ def test_settings_parse_admin_ids(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.admin_ids == (747629442, 1679569357)
     assert settings.timezone == "Europe/Kyiv"
+    assert settings.meta_pixel_id == ""
+    assert settings.attribution_port == 8080
 
 
 def test_settings_require_admins(monkeypatch: pytest.MonkeyPatch) -> None:

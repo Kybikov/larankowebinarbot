@@ -233,6 +233,52 @@ class PocketBaseClient:
         payload["first_seen_at"] = payload["last_seen_at"]
         return await self.create_record(USER_COLLECTION, payload)
 
+    async def attribution_by_token(self, token: str) -> dict[str, Any] | None:
+        if not token:
+            return None
+        items = await self.list_records("attribution_tokens", filter_=f'token="{token}"', per_page=1)
+        return items[0] if items else None
+
+    async def mark_attribution_started(
+        self,
+        attribution: dict[str, Any],
+        *,
+        user_id: str,
+        telegram_id: int | str,
+        event_id: str,
+    ) -> dict[str, Any]:
+        return await self.update_record(
+            "attribution_tokens",
+            attribution["id"],
+            {
+                "user": user_id,
+                "telegram_id": str(telegram_id),
+                "status": "started",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "start_event_id": event_id,
+            },
+        )
+
+    async def latest_started_attribution_for_user(self, user_id: str) -> dict[str, Any] | None:
+        items = await self.list_records(
+            "attribution_tokens",
+            filter_=f'user="{user_id}" && status!="registered"',
+            sort="-started_at",
+            per_page=1,
+        )
+        return items[0] if items else None
+
+    async def mark_attribution_registered(self, attribution: dict[str, Any], *, event_id: str) -> dict[str, Any]:
+        return await self.update_record(
+            "attribution_tokens",
+            attribution["id"],
+            {
+                "status": "registered",
+                "registered_at": datetime.now(timezone.utc).isoformat(),
+                "registration_event_id": event_id,
+            },
+        )
+
     async def active_webinar(self) -> dict[str, Any]:
         webinars = await self.list_records(
             "webinars",
@@ -412,6 +458,32 @@ def collection_definitions() -> list[dict[str, Any]]:
                 {"name": "sent_at", "type": "date", "required": False, "options": {}},
             ],
             "indexes": [],
+        },
+        {
+            "name": "attribution_tokens",
+            "type": "base",
+            "system": False,
+            "schema": [
+                {"name": "token", "type": "text", "required": True, "options": {"maxSize": 64}},
+                {"name": "pixel_id", "type": "text", "required": False, "options": {}},
+                {"name": "fbclid", "type": "text", "required": False, "options": {}},
+                {"name": "fbc", "type": "text", "required": False, "options": {}},
+                {"name": "fbp", "type": "text", "required": False, "options": {}},
+                {"name": "utm", "type": "json", "required": False, "options": {}},
+                {"name": "source_url", "type": "text", "required": False, "options": {"maxSize": 5000}},
+                {"name": "referrer", "type": "text", "required": False, "options": {"maxSize": 5000}},
+                {"name": "user_agent", "type": "text", "required": False, "options": {"maxSize": 2000}},
+                {"name": "ip_address", "type": "text", "required": False, "options": {}},
+                {"name": "telegram_id", "type": "text", "required": False, "options": {}},
+                {"name": "user", "type": "text", "required": False, "options": {}},
+                {"name": "status", "type": "select", "required": True, "options": {"maxSelect": 1, "values": ["created", "started", "registered"]}},
+                {"name": "start_event_id", "type": "text", "required": False, "options": {}},
+                {"name": "registration_event_id", "type": "text", "required": False, "options": {}},
+                {"name": "created_at", "type": "date", "required": True, "options": {}},
+                {"name": "started_at", "type": "date", "required": False, "options": {}},
+                {"name": "registered_at", "type": "date", "required": False, "options": {}},
+            ],
+            "indexes": ["CREATE UNIQUE INDEX idx_attribution_tokens_token ON attribution_tokens (token)"],
         },
         {
             "name": "broadcast_logs",

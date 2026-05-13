@@ -20,6 +20,13 @@ class Settings:
     instagram_school_url: str
     instagram_studio_url: str
     curator_username: str
+    bot_username: str
+    attribution_host: str
+    attribution_port: int
+    attribution_public_base_url: str
+    meta_pixel_id: str
+    meta_access_token: str
+    meta_action_source: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,6 +52,13 @@ class Settings:
                 "INSTAGRAM_STUDIO_URL", "https://www.instagram.com/laranko_interior"
             ),
             curator_username=os.getenv("CURATOR_USERNAME", "Laranko_Academy").lstrip("@"),
+            bot_username=os.getenv("BOT_USERNAME", "larankowebirnar_bot").lstrip("@"),
+            attribution_host=os.getenv("ATTRIBUTION_HOST", "0.0.0.0"),
+            attribution_port=int(os.getenv("ATTRIBUTION_PORT", "8080")),
+            attribution_public_base_url=os.getenv("ATTRIBUTION_PUBLIC_BASE_URL", "").rstrip("/"),
+            meta_pixel_id=os.getenv("META_PIXEL_ID", "").strip(),
+            meta_access_token=os.getenv("META_ACCESS_TOKEN", "").strip(),
+            meta_action_source=os.getenv("META_ACTION_SOURCE", "website").strip(),
         )
 
 
