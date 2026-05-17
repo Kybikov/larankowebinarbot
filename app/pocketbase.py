@@ -320,9 +320,10 @@ class PocketBaseClient:
         return await self.create_record("registrations", payload)
 
     async def pending_messages(self, now: datetime) -> list[dict[str, Any]]:
+        now_filter = format_pocketbase_datetime(now)
         return await self.list_all_records(
             "scheduled_messages",
-            filter_=f'status="pending" && send_at<="{now.isoformat()}"',
+            filter_=f'status="pending" && send_at<="{now_filter}"',
             sort="send_at",
         )
 
@@ -510,3 +511,9 @@ def collection_definitions() -> list[dict[str, Any]]:
                 field.setdefault("options", {})
                 field["options"].setdefault("maxSize", 200000)
     return definitions
+
+
+def format_pocketbase_datetime(value: datetime) -> str:
+    value = value.astimezone(timezone.utc)
+    milliseconds = value.microsecond // 1000
+    return value.strftime(f"%Y-%m-%d %H:%M:%S.{milliseconds:03d}Z")

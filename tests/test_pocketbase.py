@@ -1,4 +1,6 @@
-from app.pocketbase import collection_definitions
+from datetime import datetime, timezone
+
+from app.pocketbase import collection_definitions, format_pocketbase_datetime
 
 
 def test_collection_definitions_include_required_collections() -> None:
@@ -53,3 +55,9 @@ def test_broadcast_log_counts_allow_zero_values() -> None:
     fields = {field["name"]: field for field in broadcast_logs["schema"]}
 
     assert fields["failure_count"]["required"] is False
+
+
+def test_format_pocketbase_datetime_uses_pocketbase_utc_shape() -> None:
+    value = datetime(2026, 5, 17, 12, 38, 3, 758140, tzinfo=timezone.utc)
+
+    assert format_pocketbase_datetime(value) == "2026-05-17 12:38:03.758Z"
