@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from math import ceil
 from zoneinfo import ZoneInfo
@@ -267,16 +267,17 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         if not is_admin(callback.from_user.id):
             return
         webinar_id = callback.data.rsplit(":", 1)[1]
+        now = datetime.now(timezone.utc).isoformat()
         records = await pb.list_all_records(
             "scheduled_messages",
-            filter_=f'webinar="{webinar_id}"',
+            filter_=f'webinar="{webinar_id}" && status="pending" && send_at>="{now}"',
             sort="send_at",
         )
         if not records:
-            await callback.message.answer("Для цього вебінару немає запланованих повідомлень.")
+            await callback.message.answer("Для цього вебінару немає майбутніх запланованих повідомлень.")
             await callback.answer()
             return
-        await callback.message.answer(f"Відправляю всі превʼю по черзі: <b>{len(records)}</b>.")
+        await callback.message.answer(f"Відправляю майбутні превʼю по черзі: <b>{len(records)}</b>.")
         for index, scheduled in enumerate(records, start=1):
             await callback.message.answer(
                 f"<b>Превʼю {index}/{len(records)}</b>\n"
