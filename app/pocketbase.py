@@ -492,9 +492,9 @@ def collection_definitions() -> list[dict[str, Any]]:
             "schema": [
                 {"name": "scheduled_message", "type": "text", "required": False, "options": {}},
                 {"name": "webinar", "type": "text", "required": False, "options": {}},
-                {"name": "recipient_count", "type": "number", "required": True, "options": {"noDecimal": True}},
-                {"name": "success_count", "type": "number", "required": True, "options": {"noDecimal": True}},
-                {"name": "failure_count", "type": "number", "required": True, "options": {"noDecimal": True}},
+                {"name": "recipient_count", "type": "number", "required": False, "options": {"noDecimal": True}},
+                {"name": "success_count", "type": "number", "required": False, "options": {"noDecimal": True}},
+                {"name": "failure_count", "type": "number", "required": False, "options": {"noDecimal": True}},
                 {"name": "errors", "type": "json", "required": False, "options": {}},
                 {"name": "sent_at", "type": "date", "required": True, "options": {}},
             ],

@@ -44,3 +44,12 @@ def test_attribution_tokens_store_meta_click_context() -> None:
     assert fields["fbclid"]["type"] == "text"
     assert fields["fbp"]["type"] == "text"
     assert fields["utm"]["type"] == "json"
+
+
+def test_broadcast_log_counts_allow_zero_values() -> None:
+    broadcast_logs = next(
+        collection for collection in collection_definitions() if collection["name"] == "broadcast_logs"
+    )
+    fields = {field["name"]: field for field in broadcast_logs["schema"]}
+
+    assert fields["failure_count"]["required"] is False

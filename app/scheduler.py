@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,9 @@ from app.keyboards import url_buttons
 from app.pocketbase import PocketBaseClient
 
 
+logger = logging.getLogger(__name__)
+
+
 def build_scheduler(bot: Bot, pb: PocketBaseClient) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     scheduler.add_job(run_due_broadcasts, "interval", seconds=30, args=[bot, pb], max_instances=1)
@@ -18,7 +22,16 @@ def build_scheduler(bot: Bot, pb: PocketBaseClient) -> AsyncIOScheduler:
 
 
 async def run_due_broadcasts(bot: Bot, pb: PocketBaseClient) -> None:
-    for scheduled in await pb.pending_messages(datetime.now(timezone.utc)):
+    now = datetime.now(timezone.utc)
+    for scheduled in await pb.pending_messages(now):
+        if not is_due(scheduled, now):
+            logger.warning(
+                "Skipping scheduled message returned too early: id=%s send_at=%s now=%s",
+                scheduled.get("id"),
+                scheduled.get("send_at"),
+                now.isoformat(),
+            )
+            continue
         await send_scheduled_message(bot, pb, scheduled)
 
 
@@ -49,17 +62,20 @@ async def send_scheduled_message(bot: Bot, pb: PocketBaseClient, scheduled: dict
     failure_count = len(errors)
     status = "sent" if failure_count == 0 else "failed"
     await pb.update_record("scheduled_messages", scheduled["id"], {"status": status, "sent_at": now})
-    await pb.log_broadcast(
-        {
-            "scheduled_message": scheduled["id"],
-            "webinar": webinar["id"],
-            "recipient_count": len(registrations),
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "errors": errors,
-            "sent_at": now,
-        }
-    )
+    try:
+        await pb.log_broadcast(
+            {
+                "scheduled_message": scheduled["id"],
+                "webinar": webinar["id"],
+                "recipient_count": len(registrations),
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "errors": errors,
+                "sent_at": now,
+            }
+        )
+    except Exception:
+        logger.exception("Broadcast log failed for scheduled_message=%s", scheduled["id"])
     return {
         "recipient_count": len(registrations),
         "success_count": success_count,
@@ -95,3 +111,23 @@ def get_media_file_ids(scheduled: dict[str, Any]) -> list[str]:
         return [str(file_id) for file_id in media_file_ids if file_id]
     media_file_id = scheduled.get("media_file_id") or ""
     return [str(media_file_id)] if media_file_id else []
+
+
+def is_due(scheduled: dict[str, Any], now: datetime) -> bool:
+    send_at = parse_pocketbase_datetime(scheduled.get("send_at"))
+    return bool(send_at and send_at <= now)
+
+
+def parse_pocketbase_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip().replace(" ", "T")
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
