@@ -78,7 +78,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
     def is_admin(user_id: int | None) -> bool:
         return bool(user_id and user_id in admin_ids)
 
-    @router.message(F.text.in_({"/admin", "/panel"}))
+    @router.message(F.text == "/admin")
     async def panel(message: Message, state: FSMContext) -> None:
         if not is_admin(message.from_user.id):
             return

@@ -51,7 +51,6 @@ async def setup_bot_commands(bot: Bot, admin_ids: tuple[int, ...]) -> None:
     admin_commands = [
         *default_commands,
         BotCommand(command="admin", description="Адмін-панель"),
-        BotCommand(command="panel", description="Адмін-панель"),
     ]
     await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
     for admin_id in admin_ids:
