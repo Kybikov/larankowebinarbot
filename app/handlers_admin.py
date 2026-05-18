@@ -21,6 +21,7 @@ from app.keyboards import (
     message_list_keyboard,
     registration_list_keyboard,
     scheduled_message_keyboard,
+    user_list_keyboard,
     webinar_admin_keyboard,
     webinar_links_keyboard,
 )
@@ -113,21 +114,36 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         )
         await callback.answer()
 
-    @router.callback_query(F.data == "admin:users")
+    @router.callback_query(F.data.startswith("admin:users"))
     async def users(callback: CallbackQuery) -> None:
         if not is_admin(callback.from_user.id):
             return
-        records = await pb.list_records(USER_COLLECTION, sort="-last_seen_at", per_page=20)
+        parts = callback.data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        records = await pb.list_all_records(USER_COLLECTION, sort="-last_seen_at")
         if not records:
-            text = "Користувачів поки немає."
-        else:
-            lines = [
-                f"• <code>{item.get('telegram_id')}</code> @{item.get('username') or '-'} "
-                f"{item.get('first_name') or ''} {item.get('last_name') or ''}".strip()
-                for item in records
-            ]
-            text = "<b>Останні користувачі</b>\n\n" + "\n".join(lines)
-        await callback.message.answer(text)
+            await callback.message.answer("Користувачів поки немає.", reply_markup=user_list_keyboard(0, 1))
+            await callback.answer()
+            return
+
+        registrations = await pb.list_all_records("registrations", sort="-registered_at")
+        registration_by_user = latest_registration_by_user(registrations)
+        total_pages = max(ceil(len(records) / PAGE_SIZE), 1)
+        page = min(max(page, 0), total_pages - 1)
+        page_items = records[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+        lines = [
+            "<b>Користувачі</b>",
+            f"Всього: <b>{len(records)}</b> | Зареєстровані: <b>{len(registration_by_user)}</b>",
+            f"Сторінка {page + 1}/{total_pages}",
+            "",
+        ]
+        for index, item in enumerate(page_items, start=page * PAGE_SIZE + 1):
+            lines.append(format_admin_user_row(index, item, registration_by_user.get(item.get("id")), timezone_name))
+
+        await callback.message.answer(
+            "\n\n".join(lines),
+            reply_markup=user_list_keyboard(page, total_pages),
+        )
         await callback.answer()
 
     @router.callback_query(F.data == "admin:webinars")
@@ -743,6 +759,39 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await message.answer("Вебінар створено як неактивний.", reply_markup=webinar_admin_keyboard(webinar["id"], "draft"))
 
     return router
+
+
+def latest_registration_by_user(registrations: list[dict]) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for registration in registrations:
+        user_id = registration.get("user")
+        if user_id and user_id not in result:
+            result[user_id] = registration
+    return result
+
+
+def format_admin_user_row(index: int, user: dict, registration: dict | None, timezone_name: str) -> str:
+    status_icon = "✅" if registration else "❌"
+    full_name = " ".join(filter(None, [user.get("first_name"), user.get("last_name")])) or "-"
+    username = f"@{user.get('username')}" if user.get("username") else "-"
+    language = user.get("language_code") or "-"
+    last_seen = format_datetime_with_tz(user.get("last_seen_at"), timezone_name)
+    registered_at = format_datetime_with_tz(registration.get("registered_at"), timezone_name) if registration else "-"
+    phone = registration.get("phone") if registration else ""
+    name = registration.get("name") if registration else ""
+    registration_line = (
+        f"   ✅ Реєстрація: {escape(registered_at)}"
+        + (f" | {escape(name)}" if name else "")
+        + (f" | {escape(phone)}" if phone else "")
+        if registration
+        else "   ❌ Реєстрації ще немає"
+    )
+    return (
+        f"{index}. {status_icon} <b>{escape(full_name)}</b>\n"
+        f"   ID: <code>{escape(str(user.get('telegram_id') or '-'))}</code> | {escape(username)}\n"
+        f"   Мова: {escape(language)} | Остання активність: {escape(last_seen)}\n"
+        f"{registration_line}"
+    )
 
 
 def parse_admin_datetime(value: str) -> datetime:

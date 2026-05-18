@@ -64,7 +64,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Статистика", callback_data="admin:stats"),
             ],
             [
-                InlineKeyboardButton(text="Користувачі", callback_data="admin:users"),
+                InlineKeyboardButton(text="Користувачі", callback_data="admin:users:0"),
                 InlineKeyboardButton(text="Експорт CSV", callback_data="admin:export"),
             ],
             [InlineKeyboardButton(text="Створити вебінар", callback_data="admin:create_webinar")],
@@ -215,6 +215,15 @@ def registration_list_keyboard(
     rows.extend(nav)
     rows.append([InlineKeyboardButton(text="Назад до вебінарів", callback_data="admin:webinars")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def user_list_keyboard(page: int, total_pages: int) -> InlineKeyboardMarkup:
+    return page_keyboard(
+        prefix="admin:users",
+        page=page,
+        total_pages=total_pages,
+        back_callback="admin:panel",
+    )
 
 
 def url_buttons(buttons: list[dict], webinar: dict) -> InlineKeyboardMarkup | None:

@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
 from app.attribution import start_attribution_server
 from app.config import Settings
@@ -24,6 +25,7 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dispatcher = Dispatcher(storage=MemoryStorage())
+    await setup_bot_commands(bot, settings.admin_ids)
 
     async with PocketBaseClient(settings) as pb:
         await pb.ensure_schema()
@@ -40,3 +42,20 @@ async def main() -> None:
             scheduler.shutdown(wait=False)
             await attribution_runner.cleanup()
             await bot.session.close()
+
+
+async def setup_bot_commands(bot: Bot, admin_ids: tuple[int, ...]) -> None:
+    default_commands = [
+        BotCommand(command="start", description="Відкрити вебінар"),
+    ]
+    admin_commands = [
+        *default_commands,
+        BotCommand(command="admin", description="Адмін-панель"),
+        BotCommand(command="panel", description="Адмін-панель"),
+    ]
+    await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
+    for admin_id in admin_ids:
+        try:
+            await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception:
+            logging.exception("Failed to set admin bot commands for chat_id=%s", admin_id)
