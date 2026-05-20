@@ -24,6 +24,10 @@ def build_scheduler(bot: Bot, pb: PocketBaseClient) -> AsyncIOScheduler:
 async def run_due_broadcasts(bot: Bot, pb: PocketBaseClient) -> None:
     now = datetime.now(timezone.utc)
     for scheduled in await pb.pending_messages(now):
+        status = (scheduled.get("status") or "").lower()
+        if status == "cancelled":
+            logger.info("Skipping cancelled message: id=%s title=%s", scheduled.get("id"), scheduled.get("title"))
+            continue
         if not is_due(scheduled, now):
             logger.warning(
                 "Skipping scheduled message returned too early: id=%s send_at=%s now=%s",

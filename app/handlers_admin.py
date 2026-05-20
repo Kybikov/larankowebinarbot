@@ -56,6 +56,12 @@ class MessageEditState(StatesGroup):
     button_url = State()
 
 
+class MessageCreateState(StatesGroup):
+    title = State()
+    text = State()
+    time = State()
+
+
 LINK_FIELDS = {
     "zoom_url": "Zoom",
     "course_url": "Програма курсу",
@@ -323,7 +329,7 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             f"Медіа: <b>{escape(media_label(item))}</b>\n\n"
             f"Кнопок: <b>{len(item.get('buttons') or [])}</b>\n\n"
             f"<b>Текст:</b>\n{escape(preview)}",
-            reply_markup=scheduled_message_keyboard(item["id"]),
+            reply_markup=scheduled_message_keyboard(item["id"], item.get("status", "")),
         )
         await callback.answer()
 
@@ -791,6 +797,117 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
             )
         await state.clear()
         await message.answer("Вебінар створено як неактивний.", reply_markup=webinar_admin_keyboard(webinar["id"], "draft"))
+
+    # ── Create new scheduled message ──────────────────────────────────
+
+    @router.callback_query(F.data.startswith("admin:create_msg:"))
+    async def create_message_start(callback: CallbackQuery, state: FSMContext) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        webinar_id = callback.data.rsplit(":", 1)[1]
+        await state.set_state(MessageCreateState.title)
+        await state.update_data(webinar_id=webinar_id)
+        await callback.message.answer("Введіть заголовок нової розсилки (наприклад: «22 травня: нагадування про курс»).")
+        await callback.answer()
+
+    @router.message(MessageCreateState.title)
+    async def create_message_title(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        title = (message.text or "").strip()
+        if len(title) < 3:
+            await message.answer("Заголовок занадто короткий. Введіть ще раз.")
+            return
+        await state.update_data(title=title)
+        await state.set_state(MessageCreateState.text)
+        await message.answer("Тепер введіть текст розсилки. Можна використовувати HTML-розмітку.")
+
+    @router.message(MessageCreateState.text)
+    async def create_message_text(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        text = (message.text or "").strip()
+        if len(text) < 10:
+            await message.answer("Текст занадто короткий. Введіть ще раз.")
+            return
+        await state.update_data(text=text)
+        await state.set_state(MessageCreateState.time)
+        await message.answer(
+            "О котрій відправити розсилку?\n\n"
+            "Формат: 22.05.2026 18:00\n\n"
+            "Якщо хочете відправити зараз — напишіть «зараз»"
+        )
+
+    @router.message(MessageCreateState.time)
+    async def create_message_time(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        time_str = (message.text or "").strip().lower()
+        data = await state.get_data()
+        webinar_id = data["webinar_id"]
+        title = data["title"]
+        text = data["text"]
+
+        if time_str == "зараз":
+            send_at = datetime.now(timezone.utc).isoformat()
+        else:
+            try:
+                naive = parse_admin_datetime(message.text)
+                send_at = naive.replace(tzinfo=ZoneInfo(timezone_name)).isoformat()
+            except (ValueError, IndexError):
+                await message.answer(
+                    "Неправильний формат. Використовуйте:\n"
+                    "22.05.2026 18:00\n"
+                    "Або напишіть «зараз»"
+                )
+                return
+
+        item = await pb.create_record(
+            "scheduled_messages",
+            {
+                "webinar": webinar_id,
+                "title": title,
+                "text": text,
+                "send_at": send_at,
+                "buttons": [],
+                "media_type": "none",
+                "media_file_id": "",
+                "media_file_ids": [],
+                "status": "pending",
+                "sent_at": "",
+            },
+        )
+        await state.clear()
+        await message.answer(
+            "✅ Розсилку створено.",
+            reply_markup=scheduled_message_keyboard(item["id"], "pending"),
+        )
+
+    # ── Cancel / Restore scheduled message ────────────────────────────
+
+    @router.callback_query(F.data.startswith("admin:cancel_msg:"))
+    async def cancel_message(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.update_record("scheduled_messages", message_id, {"status": "cancelled"})
+        await callback.message.answer(
+            "⏸ Розсилку скасовано. Вона не буде відправлена.",
+            reply_markup=scheduled_message_keyboard(message_id, "cancelled"),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin:restore_msg:"))
+    async def restore_message(callback: CallbackQuery) -> None:
+        if not is_admin(callback.from_user.id):
+            return
+        message_id = callback.data.rsplit(":", 1)[1]
+        item = await pb.update_record("scheduled_messages", message_id, {"status": "pending", "sent_at": ""})
+        await callback.message.answer(
+            "✅ Розсилку відновлено.",
+            reply_markup=scheduled_message_keyboard(message_id, "pending"),
+        )
+        await callback.answer()
 
     return router
 

@@ -108,7 +108,18 @@ def webinar_links_keyboard(webinar_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def scheduled_message_keyboard(message_id: str) -> InlineKeyboardMarkup:
+def scheduled_message_keyboard(message_id: str, status: str = "") -> InlineKeyboardMarkup:
+    status = (status or "").lower()
+    action_rows: list[list[InlineKeyboardButton]] = []
+    if status == "cancelled":
+        action_rows.append(
+            [InlineKeyboardButton(text="✅ Відновити розсилку", callback_data=f"admin:restore_msg:{message_id}")]
+        )
+    else:
+        action_rows.append(
+            [InlineKeyboardButton(text="⏸ Скасувати розсилку", callback_data=f"admin:cancel_msg:{message_id}")]
+        )
+    
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -122,6 +133,7 @@ def scheduled_message_keyboard(message_id: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Кнопки", callback_data=f"admin:msg_buttons:{message_id}")],
             [InlineKeyboardButton(text="Превʼю для себе", callback_data=f"admin:preview_msg:{message_id}")],
             [InlineKeyboardButton(text="Відправити зараз", callback_data=f"admin:send_now:{message_id}")],
+            *action_rows,
             [InlineKeyboardButton(text="Назад до розсилок", callback_data=f"admin:message_back:{message_id}")],
         ]
     )
@@ -200,6 +212,7 @@ def message_list_keyboard(webinar_id: str, messages: list[dict], page: int, tota
     ]
     nav = page_keyboard(prefix=f"admin:messages:{webinar_id}", page=page, total_pages=total_pages).inline_keyboard
     rows.extend(nav)
+    rows.append([InlineKeyboardButton(text="📝 Створити розсилку", callback_data=f"admin:create_msg:{webinar_id}")])
     rows.append([InlineKeyboardButton(text="Назад до вебінарів", callback_data="admin:webinars")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
