@@ -706,6 +706,11 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         if not is_admin(callback.from_user.id):
             return
         message_id = callback.data.rsplit(":", 1)[1]
+
+        # Set status to "sending" immediately so the scheduler
+        # never picks up this message in a race condition
+        await pb.update_record("scheduled_messages", message_id, {"status": "sending"})
+
         scheduled = await pb.get_record("scheduled_messages", message_id)
         result = await send_scheduled_message(callback.bot, pb, scheduled)
         await callback.message.answer(
@@ -835,32 +840,28 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await message.answer(
             "О котрій відправити розсилку?\n\n"
             "Формат: 22.05.2026 18:00\n\n"
-            "Якщо хочете відправити зараз — напишіть «зараз»"
+            "Після створення ви зможете додати кнопки, медіа та відправити зараз."
         )
 
     @router.message(MessageCreateState.time)
     async def create_message_time(message: Message, state: FSMContext) -> None:
         if not is_admin(message.from_user.id):
             return
-        time_str = (message.text or "").strip().lower()
         data = await state.get_data()
         webinar_id = data["webinar_id"]
         title = data["title"]
         text = data["text"]
 
-        if time_str == "зараз":
-            send_at = datetime.now(timezone.utc).isoformat()
-        else:
-            try:
-                naive = parse_admin_datetime(message.text)
-                send_at = naive.replace(tzinfo=ZoneInfo(timezone_name)).isoformat()
-            except (ValueError, IndexError):
-                await message.answer(
-                    "Неправильний формат. Використовуйте:\n"
-                    "22.05.2026 18:00\n"
-                    "Або напишіть «зараз»"
-                )
-                return
+        try:
+            naive = parse_admin_datetime(message.text)
+            send_at = naive.replace(tzinfo=ZoneInfo(timezone_name)).isoformat()
+        except (ValueError, IndexError):
+            await message.answer(
+                "Неправильний формат. Використовуйте:\n"
+                "22.05.2026 18:00\n\n"
+                "Після створення можна буде відправити зараз через кнопку «Відправити зараз»"
+            )
+            return
 
         item = await pb.create_record(
             "scheduled_messages",
