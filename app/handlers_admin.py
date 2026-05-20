@@ -53,6 +53,7 @@ class MessageEditState(StatesGroup):
     time = State()
     media = State()
     button_text = State()
+    button_url = State()
 
 
 LINK_FIELDS = {
@@ -510,7 +511,13 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         if buttons:
             lines = ["<b>Кнопки нагадування</b>"]
             for index, button in enumerate(buttons, start=1):
-                lines.append(f"{index}. {escape(button.get('text', 'Кнопка'))} → <code>{escape(button.get('url_key', '-'))}</code>")
+                label = button.get("text", "Кнопка")
+                url_key = button.get("url_key", "-")
+                if url_key == "custom":
+                    url = button.get("url", "")
+                    lines.append(f"{index}. {escape(label)} → 🔗 <code>{escape(url[:60])}</code>")
+                else:
+                    lines.append(f"{index}. {escape(label)} → <code>{escape(url_key)}</code>")
             text = "\n".join(lines)
         else:
             text = "<b>Кнопки нагадування</b>\nКнопок поки немає."
@@ -553,6 +560,15 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         if not button_text:
             await callback.answer("Текст кнопки не знайдено, почніть додавання ще раз", show_alert=True)
             return
+
+        # If custom URL, ask for the link first
+        if url_key == "custom":
+            await state.set_state(MessageEditState.button_url)
+            await state.update_data(message_id=message_id, button_text=button_text, url_key=url_key)
+            await callback.message.answer("Надішліть посилання для кнопки (https://...).")
+            await callback.answer()
+            return
+
         item = await pb.get_record("scheduled_messages", message_id)
         buttons = list(item.get("buttons") or [])
         buttons.append({"text": button_text, "url_key": url_key})
@@ -560,6 +576,24 @@ def build_admin_router(pb: PocketBaseClient, admin_ids: tuple[int, ...], timezon
         await state.clear()
         await callback.message.answer("Кнопку додано.", reply_markup=message_buttons_keyboard(message_id, item.get("buttons") or []))
         await callback.answer()
+
+    @router.message(MessageEditState.button_url)
+    async def add_message_button_custom_url(message: Message, state: FSMContext) -> None:
+        if not is_admin(message.from_user.id):
+            return
+        url = (message.text or "").strip()
+        if not url or not url.startswith(("http://", "https://")):
+            await message.answer("Будь ласка, надішліть повне посилання, яке починається з https://")
+            return
+        data = await state.get_data()
+        message_id = data["message_id"]
+        button_text = data["button_text"]
+        item = await pb.get_record("scheduled_messages", message_id)
+        buttons = list(item.get("buttons") or [])
+        buttons.append({"text": button_text, "url_key": "custom", "url": url})
+        item = await pb.update_record("scheduled_messages", message_id, {"buttons": buttons, "status": "pending"})
+        await state.clear()
+        await message.answer("✅ Кастомну кнопку додано.", reply_markup=message_buttons_keyboard(message_id, item.get("buttons") or []))
 
     @router.callback_query(F.data.startswith("admin:del_msg_button:"))
     async def delete_message_button(callback: CallbackQuery) -> None:

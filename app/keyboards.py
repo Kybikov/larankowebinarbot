@@ -143,6 +143,7 @@ MESSAGE_BUTTON_URL_KEYS = {
     "instagram_school_url": "Instagram школи",
     "instagram_studio_url": "Instagram студії",
     "curator_url": "Куратор Telegram",
+    "custom": "🔗 Кастомне посилання",
 }
 
 
@@ -150,7 +151,9 @@ def message_buttons_keyboard(message_id: str, buttons: list[dict]) -> InlineKeyb
     rows: list[list[InlineKeyboardButton]] = []
     for index, button in enumerate(buttons or []):
         label = button.get("text") or MESSAGE_BUTTON_URL_KEYS.get(button.get("url_key", ""), "Кнопка")
-        rows.append([InlineKeyboardButton(text=f"Видалити: {label}", callback_data=f"admin:del_msg_button:{message_id}:{index}")])
+        # Truncate long labels for button display
+        display = label[:30] + "…" if len(label) > 30 else label
+        rows.append([InlineKeyboardButton(text=f"✕ {display}", callback_data=f"admin:del_msg_button:{message_id}:{index}")])
     rows.extend(
         [
             [InlineKeyboardButton(text="Додати кнопку", callback_data=f"admin:add_msg_button:{message_id}")],
@@ -237,7 +240,11 @@ def url_buttons(buttons: list[dict], webinar: dict) -> InlineKeyboardMarkup | No
         "curator_url": f"https://t.me/{webinar.get('curator_username', 'Laranko_Academy').lstrip('@')}",
     }
     for button in buttons or []:
-        url = url_map.get(button.get("url_key", ""))
+        url = None
+        if button.get("url_key") == "custom":
+            url = button.get("url", "")
+        else:
+            url = url_map.get(button.get("url_key", ""))
         if url:
             rows.append([InlineKeyboardButton(text=button.get("text", "Відкрити"), url=url)])
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
